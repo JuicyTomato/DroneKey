@@ -1,5 +1,5 @@
 # dati: 6DroneSyn non va mai nel repo (licenza), né i derivati pesanti
-data/
+/data/
 experiments/
 runs/
 *.zip

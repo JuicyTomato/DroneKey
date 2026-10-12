@@ -21,3 +21,10 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def dataset_root():
     return _dataset_root()
+
+@pytest.fixture
+def fake_root(tmp_path):
+    from tests.fixtures.fake_dataset import default_sequences, write_fake_dataset
+    root = tmp_path / "6DroneSyn"
+    write_fake_dataset(root, default_sequences())
+    return root
