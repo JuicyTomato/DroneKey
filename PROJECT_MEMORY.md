@@ -3,7 +3,7 @@
 Memoria viva del progetto: decisioni prese, fatti verificati sui dati, problemi aperti, idee future.
 Aggiornare a ogni decisione. Non cancellare voci: marcarle come superate (~~barrato~~ + data + motivo).
 
-Ultimo aggiornamento: 2026-10-13
+Ultimo aggiornamento: 2026-10-14
 
 ---
 
@@ -306,6 +306,35 @@ Da fare / aperto dopo lo scheletro:
 - Una sola sequenza di val: l'errore va misurato su tutte le scene di val e di test, con più semi (budget §Piano 6).
 - Quota Kaggle privata osservata dall'utente: fino a 200 GB (decisione "≤ 20 GB" del 2026-10-10 da rivedere: **in attesa di conferma dell'utente**).
 - Passi del piano che prendono in carico i problemi: 2.x (disambiguazione temporale), 1.x (scala di ablation, copy-paste sfondi), E5/R.x (reale).
+
+## 6ter. Come si lavora e dove sta cosa (2026-10-14)
+
+**Repo e ambiente**
+- Repo: `https://github.com/JuicyTomato/DroneKey.git` (privato). Pacchetto `dronepose` (layout `src/`), venv `.venv` (Python 3.14), dipendenze bloccate in `requirements-lock.txt`.
+- Test: `.venv/bin/python -m pytest -q` (senza disco: 66 passed, 3 skipped). Con disco: `SIXDRONESYN_ROOT=/Volumes/MakeMePasta/6DroneSyn .venv/bin/python -m pytest -q` (69 passed). Marker `dataset` = serve il disco o `data/processed`.
+- Dati derivati (tutti fuori da git, rigenerabili): `data/manifest/` (SHA-256, 52891 file), `data/processed/` (canonici JSONL 35160/12600/5040, crop YOLO, frame della sequenza `14_03_09`), `data/kaggle_cache/` + `data/dronepose-cache.zip` (0.97 GB) + `data/dronepose-code.zip` (~50 KB). Rigenerare: `build_drone_models.py` → `build_canonical.py` → `build_yolo_crops.py` → `package_cache.py` (README del repo).
+- `configs/drone_models.json` (7 modelli FLU) è versionato. Risultati in `experiments/` (fuori da git): `skeleton_gt`, `skeleton_noise2`, `skeleton_out` (YOLO), `skeleton_run` (pesi `best.pt`/`last.pt`, curve).
+
+**Regole di lavoro concordate con l'utente**
+- Esecuzione del piano: modo **Native** (un solo contesto), revisione finale con un revisore a contesto pulito.
+- **Commit solo dopo consenso, uno per task**; messaggi **molto corti** (es. `feat: geometry lib`); **nessun trailer Co-Authored-By**. **Push solo se chiesto esplicitamente.**
+- Nessun file di 6DroneSyn né PDF IEEE in git (licenza). Le figure in `docs/figures/` (ritagli di frame) sono state **tolte dalla storia con rebase il 2026-10-14**, restano su disco e sono ignorate.
+- Soglia test di rotazione 1e-4° (non 1e-6°): rumore di `arccos` vicino a 0 (~1e-6°). Se servono errori <1e-4°, usare una versione `atan2` di `geodesic_deg`.
+- Chiavi `frame_id` = `scena_drone_sfondo_degree_numero` (univoche); prefisso di sequenza con `_` finale (es. `14_03_09_`). `run_sequence` rifiuta record di più sequenze.
+
+**Kaggle**
+- Due dataset privati: `dronepose-cache` (dati) e `dronepose-code` (codice, ricaricare come "New Version" a ogni modifica con `package_cache.py`).
+- Kaggle monta in `/kaggle/input/datasets/<utente>/<nome>/` (non `/kaggle/input/<nome>/`). `scripts/kaggle/kaggle_paths.py` trova i dataset e riscrive `data.yaml`; le celle `%%bash` del README cercano `CODE`/`CACHE` da sole.
+- Sessione interattiva: scaricare i file da Output → Data prima di chiudere (zippare con `zip -rq`); "Save Version" non serve.
+- Quota dataset privati osservata: fino a 200 GB (decisione "≤ 20 GB" da rivedere: **in attesa di conferma**).
+- YOLO: `yolo11n-pose`, 10 epoche, batch 64, imgsz 256, ~22 min su GPU Kaggle. `mAP50(P)` 0.90 (plateau dall'epoca 8). Più epoche da sole servono poco (divario train/val); leve migliori: sfondi (passo 1.8), modello più grande, più semi.
+
+**Prossimi passi (nessun piano di implementazione scritto oltre lo scheletro)**
+1. Disambiguazione temporale IPPE (flip 7.2% con YOLO, a blocchi: continuità temporale, §2 strategia b).
+2. Misurare su tutte le scene di val e di test (setting A/B/C), più semi, bootstrap appaiato.
+3. Detector del drone nel frame (per setting B e per video reali) e fase R (dati reali, M11).
+4. Fase 3 (traiettorie) e promemoria §7bis sulle unità in metri veri.
+5. Rinviati dalla revisione finale: `INTER_AREA` inefficace in `warpAffine`; `package_cache.py` da `git archive HEAD`; confidenza per keypoint; ripresa con `--data` personalizzato.
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
