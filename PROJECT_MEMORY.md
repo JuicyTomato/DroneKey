@@ -3,7 +3,7 @@
 Memoria viva del progetto: decisioni prese, fatti verificati sui dati, problemi aperti, idee future.
 Aggiornare a ogni decisione. Non cancellare voci: marcarle come superate (~~barrato~~ + data + motivo).
 
-Ultimo aggiornamento: 2026-10-12
+Ultimo aggiornamento: 2026-10-13
 
 ---
 
@@ -277,6 +277,35 @@ Confronto punto per punto con i nostri problemi. **Stato verifica: eseguita il 2
   - Output pipeline: posa attuale + traiettoria prevista a 1 s, sovrapposta al video nella demo.
   - **Esperimento aggiunto (decisione utente 2026-10-09, opzione A): predizione 2D su video reali** del dataset universitario (Anti-UAV RGBT e altre sequenze con bbox): prevedere posizione del centro/bbox nell'immagine a 0.5–1 s. Servono solo le tracce, non `K` né pose. Stessi modelli (baseline CV/CA/Kalman + GRU) con input 2D. È l'unica valutazione **quantitativa reale** della fase 3. Dettagli da definire nel piano: quali sequenze hanno bbox per frame, FPS reale, normalizzazione per dimensione della bbox, gestione dei frame senza rilevamento.
 - [ ] Spec scritta + piano di implementazione — **2026-10-10: piano di lavoro scritto in `docs/PIANO_DI_LAVORO.md`** (valutazione, punti deboli D1–D7, miglioramenti M1–M11, passi 0.1–4.3 + fase R, parallelismo, traguardi T0–T5, rischi). **v3 il 2026-10-12** dopo la revisione esterna (scheletro, flatness, M11 minimo, omografia, archivio errori, budget, bootstrap appaiato); v2 il 2026-10-10 con le osservazioni dell'utente (§0 del piano: MVP prima, scala di ablation, generatore di traiettorie, copy-paste sfondi, backup 0.9, checkpoint 0.10, M1/M3/M11 dopo l'MVP). **2026-10-12: piano di implementazione della Fase 0 minima + scheletro scritto** in `docs/superpowers/plans/2026-10-12-fase0-scheletro.md` (12 task, TDD, dataset finto per i test, test `dataset` con `SIXDRONESYN_ROOT`). In attesa di revisione e scelta del modo di esecuzione.
+
+## 6bis. Esito dello scheletro (2026-10-13)
+
+Scheletro end-to-end completato (S.1–S.4): GT → crop → YOLO-Pose (yolo11n-pose, 10 epoche, Kaggle) → IPPE → velocità costante → video. Codice nel pacchetto `dronepose`, un comando (`scripts/run_skeleton.py`). Sequenza di prova: scena 14, drone 03, sfondo 09 (360 frame, val). **Setting A** (crop dal box dei keypoint GT, quindi ottimistico: la detection non è ancora testata).
+
+| Predittore | Errore rotazione (mediana) | Errore traslazione (unità camera) | Flip (>90°) | ADE / FDE mediani (1 s) |
+|---|---|---|---|---|
+| `gt` | 0.019° | 1.4e-4 | 0% | 0.042 / 0.103 |
+| `gt+noise:2` (2 px) | 0.76° | 0.014 | 2.2% | 0.050 / 0.118 |
+| `yolo` (10 epoche) | 3.4° (p90 8.1°) | 0.067 | 7.2% (26/360) | 0.114 / 0.176 |
+
+Training (val, tutte le scene di val): `mAP50(P)` 0.90, `mAP50-95(P)` 0.89, plateau dall'epoca 8. Loss di posa: train 0.031 vs val 0.53 (da epoca 6 la val non scende più, il train sì: divario di generalizzazione tra scene, non sotto-addestramento).
+
+Errore keypoint YOLO nel frame originale: mediana 9 px (p90 16 px) su un drone largo ~340 px (~2.6%). Nei frame in flip l'errore in px è lo stesso (5–10 px) dei frame senza flip: **il flip non dipende da keypoint peggiori**, ma dall'ambiguità di IPPE con 4 punti quasi complanari. Un tratto di 8 frame consecutivi (57–65) è in flip: l'ambiguità è temporalmente correlata → la scelta per continuità temporale (§2, strategia b) è la leva giusta, non più training.
+
+Problemi d'integrazione trovati e come sono stati chiusi:
+1. `.gitignore` con `data/` non ancorato escludeva anche `src/dronepose/data` → ora `/data/`.
+2. Cache Kaggle impacchettata prima che il codice esistesse (codice vecchio nello zip) → due dataset separati: `dronepose-cache` (dati) e `dronepose-code` (~50 KB, da ricaricare a ogni modifica).
+3. Kaggle monta i dataset in `/kaggle/input/datasets/<utente>/<nome>/` e il `path:` di `data.yaml` era fisso → `scripts/kaggle/kaggle_paths.py` trova i dataset e riscrive `data.yaml` (anche prima di una ripresa).
+4. `geodesic_deg` via `arccos` ha rumore ~1e-6° vicino a zero: tre test hanno soglia 1e-4° invece di 1e-6°. Per le metriche di errori molto piccoli valutare una versione con `atan2` (non urgente: gli errori reali sono ≥0.01°).
+5. Il piano importava `pytest` in `export_yolo.py` (inutilizzato) → tolto.
+6. Warning `libpng: eXIf: invalid` sui PNG di 6DroneSyn: innocui.
+7. Immagini mancanti confermate: 120 (02_04, sfondo 14), saltate e contate dal converter.
+
+Da fare / aperto dopo lo scheletro:
+- Setting B e C (crop da detector, frame intero): non ancora testati. Una **detection** non esiste ancora → per video reali serve un detector del drone.
+- Una sola sequenza di val: l'errore va misurato su tutte le scene di val e di test, con più semi (budget §Piano 6).
+- Quota Kaggle privata osservata dall'utente: fino a 200 GB (decisione "≤ 20 GB" del 2026-10-10 da rivedere: **in attesa di conferma dell'utente**).
+- Passi del piano che prendono in carico i problemi: 2.x (disambiguazione temporale), 1.x (scala di ablation, copy-paste sfondi), E5/R.x (reale).
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
