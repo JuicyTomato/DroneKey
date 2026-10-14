@@ -9,6 +9,7 @@ import numpy as np
 from dronepose.data.canonical import read_jsonl
 from dronepose.data.drone_models import load_drone_models
 from dronepose.keypoints.predictors import GTPredictor, YoloPosePredictor
+from dronepose.pose.disambiguation import TemporalParams
 from dronepose.pipeline.skeleton import run_sequence, summarize
 from dronepose.viz.overlay import draw_overlay
 
@@ -20,6 +21,12 @@ ap.add_argument("--frames-dir", default=None, help="folder with <frame_id>.jpg; 
 ap.add_argument("--predictor", default="gt", help="gt | gt+noise:<sigma_px> | yolo:<weights.pt>")
 ap.add_argument("--obs", type=int, default=15)
 ap.add_argument("--horizon", type=int, default=30)
+ap.add_argument("--strategy", default="reproj", choices=["reproj", "temporal", "temporal_reject"])
+ap.add_argument("--reanchor-ratio", type=float, default=3.0)
+ap.add_argument("--reanchor-frames", type=int, default=3)
+ap.add_argument("--max-gap", type=int, default=5)
+ap.add_argument("--max-jump-deg", type=float, default=20.0)
+ap.add_argument("--max-reproj-px", type=float, default=20.0)
 ap.add_argument("--out", default="experiments/skeleton")
 args = ap.parse_args()
 
@@ -44,7 +51,9 @@ def load_image(r):
     return img
 
 
-results = run_sequence(records, load_image, predictor, models, obs=args.obs, horizon=args.horizon)
+params = TemporalParams(args.reanchor_ratio, args.reanchor_frames, args.max_gap, args.max_jump_deg, args.max_reproj_px)
+results = run_sequence(records, load_image, predictor, models, obs=args.obs, horizon=args.horizon,
+                       strategy=args.strategy, params=params)
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 (out / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in results))

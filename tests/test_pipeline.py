@@ -83,3 +83,43 @@ def test_run_sequence_rejects_records_from_several_sequences(tmp_path):
     recs = [to_canonical(f, models) for f in frames]
     with pytest.raises(ValueError, match="more than one sequence"):
         run_sequence(recs, _blank, GTPredictor(), models)
+
+
+import json
+
+from dronepose.pose.disambiguation import TemporalParams
+
+
+def test_strategy_fields_and_default_unchanged(tmp_path):
+    recs, models = _linear_sequence(tmp_path)
+    res = run_sequence(recs, _blank, GTPredictor(), models, obs=15, horizon=10)
+    r = res[0]
+    assert r["solution_index"] == 0 and r["rejected"] is False and r["reject_reason"] is None
+    assert r["oracle_rot_err_deg"] < 1e-3
+    json.dumps(res, allow_nan=False)                     # no Infinity/NaN in the output
+
+
+def test_temporal_never_flips_more_than_reproj(tmp_path):
+    recs, models = _linear_sequence(tmp_path)
+    flips = {}
+    for strategy in ("reproj", "temporal"):
+        res = run_sequence(recs, _blank, GTPredictor(sigma_px=6.0, seed=1), models, strategy=strategy)
+        flips[strategy] = summarize(res)["flip_rate"]
+    assert flips["temporal"] <= flips["reproj"]
+
+
+def test_reject_strategy_reports_coverage(tmp_path):
+    recs, models = _linear_sequence(tmp_path)
+    res = run_sequence(recs, _blank, GTPredictor(sigma_px=6.0, seed=1), models, strategy="temporal_reject",
+                       params=TemporalParams(max_jump_deg=1.0))
+    s = summarize(res)
+    assert s["n_rejected"] + s["n_pose"] == s["n_frames"]
+    assert 0.0 < s["coverage"] <= 1.0
+    assert all(r["R"] is None for r in res if r["rejected"])
+
+
+def test_missed_detection_has_null_ratio(tmp_path):
+    recs, models = _linear_sequence(tmp_path)
+    res = run_sequence(recs, _blank, _DropFrame20(), models, obs=15, horizon=10, strategy="temporal")
+    r20 = next(r for r in res if r["frame_idx"] == 20)
+    assert r20["reject_reason"] == "no_solution" and r20["reproj_ratio"] is None
