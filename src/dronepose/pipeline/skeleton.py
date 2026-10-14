@@ -15,6 +15,8 @@ def run_sequence(records: list[dict], load_image: Callable[[dict], np.ndarray], 
                  models: dict[str, DroneModel], obs: int = 15, horizon: int = 30) -> list[dict]:
     records = sorted(records, key=lambda r: r["frame_idx"])
     by_idx = {r["frame_idx"]: r for r in records}
+    if len(by_idx) != len(records):
+        raise ValueError("records contain more than one sequence (duplicate frame_idx): use a full sequence prefix")
     results, history = [], []                        # history: (time, t_est) of valid poses
     for r in records:
         K = np.array(r["K"])

@@ -49,3 +49,14 @@ def test_class_ids_and_yaml(tmp_path):
     write_data_yaml(tmp_path / "data.yaml", "/kaggle/input/x")
     y = yaml.safe_load((tmp_path / "data.yaml").read_text())
     assert y["kpt_shape"] == [4, 3] and y["flip_idx"] == [1, 0, 3, 2] and len(y["names"]) == 7
+
+
+@pytest.mark.parametrize("side", [512.0, 100.0])
+def test_crop_image_scale_matches_frame_to_crop(side):
+    img = np.zeros((1080, 1920, 3), np.uint8)
+    img[598:604, 998:1004] = 255                         # bright dot around pixel (1001, 601), well inside the frame
+    b = CropBox(x0=950.0, y0=550.0, side=side)
+    crop = crop_image(img, b)
+    u, v = frame_to_crop(np.array([[1001.0, 601.0]]), b)[0]
+    ys, xs = np.nonzero(crop.max(axis=2) > 100)
+    assert abs(xs.mean() - u) < 1.5 and abs(ys.mean() - v) < 1.5

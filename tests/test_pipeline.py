@@ -68,3 +68,18 @@ def test_overlay_draws_something(tmp_path):
     out = draw_overlay(img, np.array(r["K"]), np.array(r["kpts2d"]), np.array(r["kpts2d"]),
                        np.array(r["R_gt"]), np.array(r["t_gt"]), np.array([r["t_gt"], recs[1]["t_gt"]]))
     assert out.shape == img.shape and out.sum() > 0 and img.sum() == 0   # input not modified
+
+
+def test_run_sequence_rejects_records_from_several_sequences(tmp_path):
+    import pytest
+    root = tmp_path / "ds"
+    r = Rotation.from_euler("xyz", [0.3, 0.1, 0.5]).as_matrix()
+    write_fake_dataset(root, [
+        FakeSequence("14", "01", "03", 90, 20, r, t0=np.array([0.0, 0.0, 3.0])),
+        FakeSequence("14", "01", "04", 90, 20, r, t0=np.array([0.2, 0.0, 3.0])),
+    ])
+    frames = list(iter_frames(root))
+    models = build_drone_models(frames)
+    recs = [to_canonical(f, models) for f in frames]
+    with pytest.raises(ValueError, match="more than one sequence"):
+        run_sequence(recs, _blank, GTPredictor(), models)

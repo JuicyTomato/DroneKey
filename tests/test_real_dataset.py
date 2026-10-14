@@ -8,10 +8,10 @@ import pytest
 from dronepose.data.drone_models import build_drone_models, load_drone_models
 from dronepose.data.sixdronesyn import DRONE_IDS, iter_frames
 
-pytestmark = pytest.mark.dataset
 MODELS_PATH = Path("configs/drone_models.json")
 
 
+@pytest.mark.dataset
 def test_real_models_rigid_below_0_1_mm(dataset_root):
     models = build_drone_models(itertools.islice(iter_frames(dataset_root), 0, None, 50))
     assert sorted(models) == list(DRONE_IDS)
@@ -30,17 +30,22 @@ from dronepose.data.canonical import read_jsonl
 PROCESSED = Path("data/processed")
 
 
+@pytest.mark.dataset
 def test_real_canonical_counts():
     n = {s: len(read_jsonl(PROCESSED / f"canonical_{s}.jsonl")) for s in ("train", "val", "test")}
     assert n == {"train": 35160, "val": 12600, "test": 5040}
 
 
+@pytest.mark.dataset
 def test_real_canonical_gt_matches_corrected_euler(dataset_root):
     from dronepose.common.geometry import BLENDER_BODY_TO_FLU, geodesic_deg
     from dronepose.data.sixdronesyn import corrected_rotation
     frames = list(itertools.islice(iter_frames(dataset_root), 0, None, 500))
     recs = {r["frame_id"]: r for s in ("train", "val", "test") for r in read_jsonl(PROCESSED / f"canonical_{s}.jsonl")}
+    checked = 0
     for f in frames:
         if f.frame_id in recs:
             R_euler = corrected_rotation(f) @ BLENDER_BODY_TO_FLU.T
             assert geodesic_deg(np.array(recs[f.frame_id]["R_gt"]), R_euler) < 0.05
+            checked += 1
+    assert checked >= 50, f"only {checked} frames matched: frame_id drift would make this test vacuous"
