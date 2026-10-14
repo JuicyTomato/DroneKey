@@ -1,21 +1,74 @@
-# dati: 6DroneSyn non va mai nel repo (licenza), né i derivati pesanti
+# ---- Dati e licenze -------------------------------------------------------
+# 6DroneSyn non va mai nel repo (licenza: vietata la redistribuzione), né i derivati pesanti
 /data/
-experiments/
-runs/
+/aligned/
+/experiments/
+/runs/
+/wandb/
 *.zip
-aligned/
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+# figure fatte con frame di 6DroneSyn (ritagli del dataset): restano su disco, fuori da git
+/docs/figures/
 # paper IEEE scaricati con licenza universitaria: copia su OneDrive, non su GitHub
-docs/papers/
-# ambiente
-.venv/
-__pycache__/
-*.egg-info/
-.pytest_cache/
-# macOS
-.DS_Store
-._*
-# pesi
+/docs/papers/
+# registrazioni e video di prova
+*.mp4
+*.mov
+*.avi
+
+# ---- Pesi e checkpoint ----------------------------------------------------
 *.pt
 *.pth
-# scratch dell'esecuzione del piano
+*.onnx
+*.ckpt
+*.safetensors
+*.engine
+*.npz
+*.npy
+
+# ---- Python ---------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+pip-wheel-metadata/
+
+# ---- Strumenti di esecuzione / scratch ------------------------------------
 .superpowers/
+.claude/settings.local.json
+.cache/
+
+# ---- Segreti -------------------------------------------------------------
+.env
+.env.*
+*.pem
+*.key
+kaggle.json
+
+# ---- Editor e sistema -----------------------------------------------------
+.DS_Store
+._*
+.AppleDouble
+.Spotlight-V100
+.Trashes
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
