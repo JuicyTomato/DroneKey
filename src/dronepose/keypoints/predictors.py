@@ -10,7 +10,7 @@ class KeypointPredictor(Protocol):
     def predict(self, image: np.ndarray, record: dict) -> np.ndarray: ...
 
 
-def _no_detection() -> np.ndarray:
+def no_detection() -> np.ndarray:
     out = np.full((4, 3), np.nan)
     out[:, 2] = 0.0
     return out
@@ -42,7 +42,7 @@ class YoloPosePredictor:
         box = crop_box_from_kpts(np.array(record["kpts2d"], float))
         res = self.model(crop_image(image, box, self.size), imgsz=self.size, verbose=False)[0]
         if res.keypoints is None or len(res.boxes) == 0:
-            return _no_detection()
+            return no_detection()
         i = int(res.boxes.conf.argmax())
         xy = res.keypoints.xy[i].cpu().numpy()
         conf = res.keypoints.conf[i].cpu().numpy() if res.keypoints.conf is not None else np.ones(4)
