@@ -5,7 +5,7 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from dronepose.common.geometry import geodesic_deg, rot_z
-from dronepose.pose.disambiguation import TemporalParams, disambiguate, reprojection_ratio
+from dronepose.pose.disambiguation import STRATEGIES, TemporalParams, disambiguate, reprojection_ratio
 from dronepose.pose.pnp import PnPSolution
 
 FLIP = Rotation.from_euler("x", 180, degrees=True).as_matrix()   # the "other" IPPE solution, far from the truth
@@ -87,3 +87,22 @@ def test_single_and_missing_solutions():
 def test_unknown_strategy():
     with pytest.raises(ValueError):
         disambiguate([], "magic")
+
+
+def test_global_strategy_is_dispatched_with_its_own_params():
+    from dronepose.pose.global_disambiguation import GlobalParams
+
+    assert "global" in STRATEGIES
+    cands = flip_block()
+    assert all(picked_true(disambiguate(cands, "global"), k) for k in range(20))     # default params
+    assert all(picked_true(disambiguate(cands, "global", GlobalParams()), k) for k in range(20))
+    with pytest.raises(TypeError):
+        disambiguate(cands, "global", TemporalParams())
+    with pytest.raises(TypeError):
+        disambiguate(cands, "temporal", GlobalParams())
+
+
+def test_existing_strategies_ignore_frame_idx_and_up():
+    cands = flip_block()
+    plain = [c.index for c in disambiguate(cands, "temporal")]
+    assert [c.index for c in disambiguate(cands, "temporal", frame_idx=list(range(20)), up=[0, 0, 1])] == plain

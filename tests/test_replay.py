@@ -68,3 +68,15 @@ def test_gt_rotation_steps_are_zero_for_constant_attitude(tmp_path):
     recs, _ = _two_sequences(tmp_path)
     steps = gt_rotation_steps_deg(recs)
     assert len(steps) == 2 * 19 and steps.max() < 1e-3
+
+
+def test_global_replay_matches_online_pipeline_and_handles_two_sequences(tmp_path):
+    recs, models = _two_sequences(tmp_path)
+    _write_kpts(tmp_path / "k.jsonl", recs, sigma=3.0)
+    by_seq = replay(recs, load_keypoints(tmp_path / "k.jsonl"), models, strategy="global")
+    assert sorted(by_seq) == ["03_01_05_090", "03_01_07_090"]
+    seq = sorted((r for r in recs if r["frame_id"].startswith("03_01_05_")), key=lambda r: r["frame_idx"])
+    online = run_sequence(seq, lambda r: None, GTPredictor(sigma_px=3.0, seed=0), models, strategy="global")
+    got = [x["rot_err_deg"] for x in by_seq["03_01_05_090"]]
+    assert [g is None for g in got] == [x["rot_err_deg"] is None for x in online]
+    assert [g for g in got if g is not None] == pytest.approx([x["rot_err_deg"] for x in online if x["rot_err_deg"] is not None])

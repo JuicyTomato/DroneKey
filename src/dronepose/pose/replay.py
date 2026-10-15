@@ -9,7 +9,7 @@ from dronepose.common.geometry import geodesic_deg
 from dronepose.data.drone_models import DroneModel
 from dronepose.keypoints.predictors import no_detection
 from dronepose.pipeline.skeleton import assemble_results, ippe_candidates, summarize
-from dronepose.pose.disambiguation import TemporalParams, disambiguate
+from dronepose.pose.disambiguation import disambiguate
 
 
 def sequence_key(frame_id: str) -> str:
@@ -39,13 +39,14 @@ def _by_sequence(records: list[dict]) -> dict[str, list[dict]]:
 
 
 def replay(records: list[dict], kpts_by_id: dict[str, np.ndarray], models: dict[str, DroneModel],
-           strategy: str = "reproj", params: TemporalParams = TemporalParams(),
-           obs: int = 15, horizon: int = 30) -> dict[str, list[dict]]:
+           strategy: str = "reproj", params=None, obs: int = 15, horizon: int = 30,
+           up=None) -> dict[str, list[dict]]:
     out = {}
     for key, recs in _by_sequence(records).items():
         kpts = [kpts_by_id.get(r["frame_id"], no_detection()) for r in recs]
         cands = [ippe_candidates(r, kp, models) for r, kp in zip(recs, kpts)]
-        out[key] = assemble_results(recs, kpts, cands, disambiguate(cands, strategy, params), obs, horizon)
+        choices = disambiguate(cands, strategy, params, frame_idx=[r["frame_idx"] for r in recs], up=up)
+        out[key] = assemble_results(recs, kpts, cands, choices, obs, horizon)
         for res in out[key]:
             res["kpts_missing"] = res["frame_id"] not in kpts_by_id
     return out

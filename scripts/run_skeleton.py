@@ -10,6 +10,7 @@ from dronepose.data.canonical import read_jsonl
 from dronepose.data.drone_models import load_drone_models
 from dronepose.keypoints.predictors import GTPredictor, YoloPosePredictor
 from dronepose.pose.disambiguation import TemporalParams
+from dronepose.pose.global_disambiguation import GlobalParams
 from dronepose.pipeline.skeleton import run_sequence, summarize
 from dronepose.viz.overlay import draw_overlay
 
@@ -21,12 +22,16 @@ ap.add_argument("--frames-dir", default=None, help="folder with <frame_id>.jpg; 
 ap.add_argument("--predictor", default="gt", help="gt | gt+noise:<sigma_px> | yolo:<weights.pt>")
 ap.add_argument("--obs", type=int, default=15)
 ap.add_argument("--horizon", type=int, default=30)
-ap.add_argument("--strategy", default="reproj", choices=["reproj", "temporal", "temporal_reject"])
+ap.add_argument("--strategy", default="reproj", choices=["reproj", "temporal", "temporal_reject", "global"])
 ap.add_argument("--reanchor-ratio", type=float, default=3.0)
 ap.add_argument("--reanchor-frames", type=int, default=3)
 ap.add_argument("--max-gap", type=int, default=5)
 ap.add_argument("--max-jump-deg", type=float, default=20.0)
 ap.add_argument("--max-reproj-px", type=float, default=20.0)
+ap.add_argument("--reject-cost", type=float, default=None, help="global strategy: cost of a frame without pose")
+ap.add_argument("--z-cap", type=float, default=None, help="global strategy: normalised jump that restarts the chain")
+ap.add_argument("--up", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+                help="global strategy: camera-frame vertical (gravity gate); default: gravity off")
 ap.add_argument("--out", default="experiments/skeleton")
 args = ap.parse_args()
 
@@ -51,9 +56,16 @@ def load_image(r):
     return img
 
 
-params = TemporalParams(args.reanchor_ratio, args.reanchor_frames, args.max_gap, args.max_jump_deg, args.max_reproj_px)
+if args.strategy == "global":
+    base = GlobalParams()
+    params = GlobalParams(max_reproj_px=args.max_reproj_px,
+                          reject_cost=base.reject_cost if args.reject_cost is None else args.reject_cost,
+                          z_cap=base.z_cap if args.z_cap is None else args.z_cap, max_span=base.max_span)
+else:
+    params = TemporalParams(args.reanchor_ratio, args.reanchor_frames, args.max_gap, args.max_jump_deg,
+                            args.max_reproj_px)
 results = run_sequence(records, load_image, predictor, models, obs=args.obs, horizon=args.horizon,
-                       strategy=args.strategy, params=params)
+                       strategy=args.strategy, params=params, up=args.up)
 out = Path(args.out)
 out.mkdir(parents=True, exist_ok=True)
 (out / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in results))

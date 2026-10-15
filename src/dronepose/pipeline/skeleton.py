@@ -9,7 +9,7 @@ from dronepose.data.drone_models import DroneModel
 from dronepose.data.sixdronesyn import FPS
 from dronepose.eval.metrics import ade, fde, rotation_error_deg, translation_error
 from dronepose.keypoints.predictors import KeypointPredictor
-from dronepose.pose.disambiguation import Choice, TemporalParams, disambiguate
+from dronepose.pose.disambiguation import Choice, disambiguate
 from dronepose.pose.pnp import PnPSolution, solve_ippe
 from dronepose.trajectory.baselines import constant_velocity
 
@@ -60,11 +60,11 @@ def assemble_results(records: list[dict], kpts: list[np.ndarray], candidates: li
 
 def run_sequence(records: list[dict], load_image: Callable[[dict], np.ndarray], predictor: KeypointPredictor,
                  models: dict[str, DroneModel], obs: int = 15, horizon: int = 30, strategy: str = "reproj",
-                 params: TemporalParams = TemporalParams()) -> list[dict]:
+                 params=None, up=None) -> list[dict]:
     records = _check_single_sequence(records)
     kpts = [predictor.predict(load_image(r), r) for r in records]
     cands = [ippe_candidates(r, kp, models) for r, kp in zip(records, kpts)]
-    choices = disambiguate(cands, strategy, params)
+    choices = disambiguate(cands, strategy, params, frame_idx=[r["frame_idx"] for r in records], up=up)
     return assemble_results(records, kpts, cands, choices, obs, horizon)
 
 

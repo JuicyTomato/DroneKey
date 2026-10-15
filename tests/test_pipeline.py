@@ -123,3 +123,27 @@ def test_missed_detection_has_null_ratio(tmp_path):
     res = run_sequence(recs, _blank, _DropFrame20(), models, obs=15, horizon=10, strategy="temporal")
     r20 = next(r for r in res if r["frame_idx"] == 20)
     assert r20["reject_reason"] == "no_solution" and r20["reproj_ratio"] is None
+
+
+def test_global_strategy_through_run_sequence(tmp_path):
+    import pytest
+
+    recs, models = _linear_sequence(tmp_path)
+    kw = dict(obs=15, horizon=10)
+    flips = {}
+    for strategy in ("reproj", "global"):
+        res = run_sequence(recs, _blank, GTPredictor(sigma_px=6.0, seed=1), models, strategy=strategy, **kw)
+        json.dumps(res, allow_nan=False)                         # no Infinity/NaN in the output
+        flips[strategy] = summarize(res)["flip_rate"]
+    assert flips["global"] <= flips["reproj"]
+    assert all(r["solution_index"] is None for r in res if r["rejected"])
+    with pytest.raises(TypeError):
+        run_sequence(recs, _blank, GTPredictor(), models, strategy="global", params=TemporalParams())
+
+
+def test_global_strategy_gravity_gate_reaches_the_pipeline(tmp_path):
+    recs, models = _linear_sequence(tmp_path)
+    up = np.array(recs[0]["R_gt"])[:, 2]                         # the drone's own "up" at frame 0, so it is upright
+    res = run_sequence(recs, _blank, GTPredictor(sigma_px=6.0, seed=1), models, strategy="global", up=up)
+    tilts = [np.degrees(np.arccos(np.clip(np.array(r["R"])[:, 2] @ up, -1, 1))) for r in res if r["R"] is not None]
+    assert tilts and max(tilts) <= 70.0

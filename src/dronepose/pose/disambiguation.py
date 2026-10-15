@@ -2,6 +2,7 @@
 (a) 'reproj'          lowest reprojection error, frame by frame;
 (b) 'temporal'        closest rotation to the last accepted pose, with re-anchoring on clear reprojection evidence;
 (c) 'temporal_reject' (b) plus rejection of frames whose choice jumps away or reprojects badly.
+(d) 'global'          dynamic programming over the whole sequence (see global_disambiguation.py).
 """
 import math
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ import numpy as np
 from dronepose.common.geometry import geodesic_deg
 from dronepose.pose.pnp import PnPSolution
 
-STRATEGIES = ("reproj", "temporal", "temporal_reject")
+STRATEGIES = ("reproj", "temporal", "temporal_reject", "global")
 
 
 @dataclass(frozen=True)
@@ -38,10 +39,21 @@ def reprojection_ratio(sols: list[PnPSolution]) -> float:
     return sols[1].reproj_px / max(sols[0].reproj_px, 1e-9)
 
 
-def disambiguate(candidates: list[list[PnPSolution]], strategy: str = "reproj",
-                 params: TemporalParams = TemporalParams()) -> list[Choice]:
+def disambiguate(candidates: list[list[PnPSolution]], strategy: str = "reproj", params=None,
+                 frame_idx=None, up=None) -> list[Choice]:
+    """`params`: TemporalParams for the three greedy strategies, GlobalParams for 'global'; None = the default of the
+    strategy. `frame_idx` (real frame numbers) and `up` (camera-frame vertical) are used only by 'global'."""
     if strategy not in STRATEGIES:
         raise ValueError(f"unknown strategy {strategy!r}; expected one of {STRATEGIES}")
+    if strategy == "global":
+        from dronepose.pose.global_disambiguation import GlobalParams, disambiguate_global  # lazy: avoids a circular import
+        params = GlobalParams() if params is None else params
+        if not isinstance(params, GlobalParams):
+            raise TypeError(f"strategy 'global' needs GlobalParams, got {type(params).__name__}")
+        return disambiguate_global(candidates, params, frame_idx, up)
+    params = TemporalParams() if params is None else params
+    if not isinstance(params, TemporalParams):
+        raise TypeError(f"strategy {strategy!r} needs TemporalParams, got {type(params).__name__}")
     out: list[Choice] = []
     prev_R, gap, streak = None, 0, 0
 

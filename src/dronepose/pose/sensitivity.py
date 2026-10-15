@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 from dronepose.data.drone_models import DroneModel
-from dronepose.pose.disambiguation import STRATEGIES, TemporalParams
+from dronepose.pose.disambiguation import STRATEGIES
 from dronepose.pose.replay import replay
 
 SIGMAS = (0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0)
@@ -65,7 +65,7 @@ def aggregate(frames: list[dict], **labels) -> list[dict]:
 
 
 def run_noise(records: list[dict], models: dict[str, DroneModel], sigmas=SIGMAS, seeds=(0,),
-              strategies=STRATEGIES, params: TemporalParams = TemporalParams()) -> list[dict]:
+              strategies=STRATEGIES, params=None) -> list[dict]:
     rows = []
     for sigma in sigmas:
         for seed in seeds:
