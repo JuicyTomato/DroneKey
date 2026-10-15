@@ -352,13 +352,42 @@ Piano: `docs/superpowers/plans/2026-10-14-disambiguazione-sensibilita.md`. Esegu
 - [x] Task 2 — pipeline a due passate (`ippe_candidates`, `assemble_results`, `run_sequence(strategy=..., params=...)`); default `reproj`, riepilogo `gt` identico a prima. Nuovi campi per frame: `solution_index`, `rejected`, `reject_reason`, `reproj_ratio` (`null` se infinito), `oracle_rot_err_deg`; `summarize` in più: `n_rejected`, `coverage`, `p90_rot_err_deg`, `oracle_flip_rate`. `no_detection()` ora è pubblica (rename fatto col Task 5).
 - [x] Task 3 — `pose/replay.py` + `scripts/replay_disambiguation.py` (su `14_03_09` con keypoint YOLO: reproj 7.22%, temporal 1.67% = oracolo, temporal_reject 0.29% con copertura 94.7%).
 - [x] Task 4 — `pose/sensitivity.py` + `scripts/sensitivity_pnp.py` (matplotlib come extra `plots`; val, 3 semi, ~2 min, output in `experiments/sensitivity/`). Su keypoint GT + rumore σ: flip reproj/temporal/reject = 1.1/0.5/2.0% (σ 0.5), 7.0/2.2/3.4% (σ 2), 17.3/10.6/9.0% (σ 5), 30.1/29.1/19.0% (σ 10); rotazione mediana ≈ 0.26° (σ 0.5), 1.0° (σ 2), 7° (σ 10); copertura reject 98%→80%. Profondità: errore relativo 0.15% (σ 0.5) … 4.5% (σ 10), cresce poco con la distanza. Modello in scala sbagliata: profondità stimata/vera = scala (0.8…1.2), rotazione invariata (~0.016°). **Da indagare nel Task 6:** a rumore basso (σ ≤ 2) `temporal_reject` ha **più** flip di `temporal` (2.0 vs 0.5% a σ 0.5; 3.0 vs 1.1% a σ 1): il rifiuto sembra rompere la catena di riferimento dopo frame scartati.
-- [ ] Task 6 (valutazione su tutta la val con i keypoint YOLO di Kaggle, scelta soglie, registrazione). Risultato dell'export Task 5 in `results/` (non ancora controllato, non in `.gitignore`).
+- [x] Task 5 passo 6 e Task 6 (valutazione su tutta la val, soglie = default, registrazione): vedi §6quinquies. Keypoint in `experiments/keypoints/` (spostati da `results/`). Resta solo il video su Kaggle (utente).
 
 Da ricordare:
 - **Regola test:** le scene 06 e 07 non si usano per tarare nulla; gli script di replay rifiutano record di test senza `--allow-test`. Soglie scelte solo sulla val.
 - Con keypoint GT le tre strategie danno lo stesso risultato (nessuna ambiguità): il confronto vero si vede solo con i keypoint YOLO.
 - Le sezioni di piano non ancora fatte potrebbero richiedere conferma dei parametri (`reanchor_ratio` 3.0, `reanchor_frames` 3, `max_gap` 5, `max_jump_deg` 20, `max_reproj_px` 20): sono punti di partenza, da tarare sulla val nel Task 6.
 - File non committati dell'utente: il piano stesso e `scripts/make_checkerboard.py`.
+
+## 6quinquies. Disambiguazione IPPE e sensibilità: risultati su tutta la val (2026-10-15)
+
+Keypoint YOLO (yolo11n-pose, 10 epoche, **setting A**: crop dal box GT) esportati su Kaggle per val (12600) e test (5040): `experiments/keypoints/`; 0 frame senza rilevazione, confidenza media 0.999. Replay: `experiments/replay_val/`; sensibilità: `experiments/sensitivity/`. Il **test non è stato toccato** (soglie scelte solo sulla val). Passo di rotazione GT per frame (val): mediana 0.86°, p99 4.5°, max 6.6°.
+
+| Strategia | Flip (tutta la val) | Copertura | Rot. mediana | Rot. p90 | Errore traslazione mediano |
+|---|---|---|---|---|---|
+| (a) `reproj` | 15.5% | 100% | 3.99° | 155° | 0.062 |
+| (b) `temporal` | 11.3% | 100% | 3.87° | 109° | 0.062 |
+| (c) `temporal_reject` | 6.2% | 95.2% (611 scartati) | 3.67° | 11.0° | 0.059 |
+| oracolo (migliore delle 2 soluzioni) | 6.8% | | | | |
+
+**Per drone** (flip % a/b/c, oracolo, copertura di c): 01: 25.4/29.1/0.0, 1.2, 95.2% · 02: 10.7/3.1/5.2, 2.6, 93.4% · 03: 10.3/3.0/0.0, 1.4, 95.7% · 04: 9.6/1.3/0.0, 1.3, 95.6% · 05: 5.6/1.9/0.0, 1.9, 95.9% · 06: 5.2/1.3/0.0, 0.6, 97.8% · **08: 42.0/39.1/39.2, 38.6, 92.5%** (rotazione mediana 66° con (a), 19° con (c)).
+Media semplice dei 6 droni senza il 08: (a) 11.1%, (b) 6.6%, (c) 0.9%, oracolo 1.5%.
+
+**Il drone 08 (Tello) è un problema di identità dei keypoint, non di IPPE.** Sul 08 la permutazione dei 4 keypoint che minimizza l'errore in pixel non è l'identità nel **54%** dei frame (scambi sinistra/destra e rotazioni di ordine), contro 0–2.4% degli altri droni; errore keypoint mediano 31.8 px contro 5–11 px. Con i 4 punti quasi a quadrato (modello 0.047 × 0.05) YOLO non distingue le eliche davanti/dietro. Nessuna scelta tra le due soluzioni IPPE lo corregge (oracolo 38.6%). **Da affrontare nella Fase 1** (metrica di accuratezza identità, più dati/augmentation per il 08, eventuale testa di orientamento) e da dichiarare in tesi.
+
+**Altri fatti:**
+- (b) può *peggiorare* rispetto a (a): drone 01, 25.4% → 29.1% (la continuità si aggancia alla soluzione sbagliata per intere sequenze); (c) lo evita (0.0%). Ma (c) peggiora sul 02 rispetto a (b) (5.2% contro 3.1%) e, con keypoint GT + rumore basso (σ ≤ 2), ha più flip di (b): il rifiuto interrompe la catena di riferimento. Da indagare, non risolto.
+- **Soglie scelte** (griglia di 36 combinazioni su val, regola del piano: copertura ≥ 95%, poi flip più basso, poi `max_jump_deg` più grande): `reanchor_ratio` 3.0, `max_jump_deg` 20, `max_reproj_px` 20 = i **default**, quindi nessuna modifica al codice. `max_jump_deg` 20 è sopra il p99 del passo di rotazione GT (4.5°). Con `max_reproj_px` 10 la copertura scende sotto il 95%; con 40 i flip salgono a ~7%. 16 combinazioni su 36 hanno copertura ≥ 95%.
+- **Sensibilità (keypoint GT + rumore, 3 semi, val):** flip oltre l'1% a σ ≈ 0.5 (a), ≈ 1 (b), ≈ 0.5 (c); oltre il 5% tra σ 1 e 2 (a), tra 3 e 5 (b) e (c). A σ = 10: 30.1/29.1/19.0%. Rotazione mediana ≈ 1° a σ = 2 e ≈ 7° a σ = 10. Errore relativo di profondità 0.15% (σ 0.5) … 4.5% (σ 10), poco dipendente dalla distanza. Scala sbagliata del modello: profondità stimata/vera = scala (0.8…1.2), rotazione invariata.
+- Il rumore reale di YOLO (≈ 9 px mediani) è oltre l'intervallo dove i flip restano < 5% con le sole strategie temporali: il margine vero sta nel migliorare i keypoint.
+- Controllo di coerenza dell'export: su `14_03_09` con i keypoint dell'export (crop JPEG) (a) dà 8.33%, (b) 1.67%, (c) 0.00% (lo scheletro su frame interi: 7.2/1.7/0.3%): simile ma non identico, come previsto dal piano.
+
+Da fare: (Task 6 passo 4, utente) video dello scheletro con `--strategy temporal_reject` su Kaggle; metrica di identità nella Fase 1; ripetere la valutazione sul test solo alla fine; più semi di YOLO.
+
+## 6sexies. Difetto di `temporal_reject`: diagnosi e passaggio di sessione (2026-10-15)
+
+Dopo i video di confronto (`scripts/compare_strategies.py`, `experiments/compare/`) è emerso un difetto di (c): dopo una raffica di scarti (> `max_gap` = 5 frame) il riferimento viene dimenticato, il primo frame accettato sceglie per riproiezione con rapporto ≈ 1.1 (lancio di moneta), e la continuità poi si auto-rinforza sulla soluzione sbagliata (esempio: `14_02_07_000`, frame 287–360 a 172–179°). Evidenze: `max_gap` ≥ 15 porta i flip senza il drone 08 da 0.86% a 0.03% (drone 02: 5.2% → 0.2%) a copertura invariata; un gate di gravità (inclinazione ≤ 70°) da solo dà 0.27% senza storia, perché il 94% delle candidate in flip è "a testa in giù"; il drone 08 resta a ~39% (confusione di identità, problema separato). **Tutto il contesto, le idee candidate (A–G), i criteri di successo e il prompt per la nuova sessione sono in `docs/superpowers/handoff/2026-10-15-fix-temporal-reject.md`.** Diagnostica riproducibile: `scripts/diagnose_disambiguation.py {trace|maxgap|gravity}`. Non ancora deciso: quali soluzioni adottare (si valutano con l'utente in una nuova sessione).
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
