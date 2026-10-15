@@ -327,14 +327,38 @@ Da fare / aperto dopo lo scheletro:
 - Kaggle monta in `/kaggle/input/datasets/<utente>/<nome>/` (non `/kaggle/input/<nome>/`). `scripts/kaggle/kaggle_paths.py` trova i dataset e riscrive `data.yaml`; le celle `%%bash` del README cercano `CODE`/`CACHE` da sole.
 - Sessione interattiva: scaricare i file da Output → Data prima di chiudere (zippare con `zip -rq`); "Save Version" non serve.
 - Quota dataset privati osservata: fino a 200 GB (decisione "≤ 20 GB" da rivedere: **in attesa di conferma**).
+- **Trappola inferenza ultralytics:** `model.predict(lista_di_path, batch=N, stream=True)` su Kaggle ha ignorato `batch` e ha caricato l'intero split (12600 crop) in un solo batch → `CUDA out of memory. Tried to allocate 12.30 GiB` (= 12600 × 16×128×128 × 4 B) al warmup, su T4 da 14.56 GiB; il problema non è la GPU. Sempre spezzare a mano in blocchi (`export_keypoints.py` lo fa dal 2026-10-14). Segnale diagnostico: l'allocazione richiesta è ≈ N_immagini × dimensione di un'attivazione, non un batch normale.
+- **Trappole delle celle Kaggle (2026-10-15, Task 5):**
+  1. **Export bloccato 9 ore senza output.** Prima versione lanciata con Save & Run All: nessuna riga stampata, nemmeno l'`echo "pesi: ..."`; fermata a mano → Kaggle **scarta l'output** di una versione annullata. Causa **non ancora verificata**; sospetto: `find /kaggle/input -name best.pt` che percorre i ~106k file della cache su un mount di rete lento.
+  2. **I dataset sono mount di rete** (cartelle `nobody:nogroup`, dimensione 0, non link simbolici). Mai usare `find /kaggle/input`: lento sulla cache, e con `-type d` ha restituito un percorso vuoto (`CODE=` → `can't open file '/scripts/...'`). Usare `ls -d /kaggle/input/datasets/*/<nome>` (glob) come nel README.
+  3. **Input mancante senza errore:** in una sessione era montato `dronepose-code` e `dronepose-weights` ma **non** `dronepose-cache`. La cella del README §5 ora stampa `codice`/`cache`/`pesi` e si ferma se uno è vuoto. Primo controllo in caso di dubbio: `ls -la /kaggle/input/datasets/*/`.
+  4. **Output invisibile:** sotto `%%bash` lo stdout di Python è in pipe e bufferizzato → nessuna stampa fino alla fine. Usare `python -u` e `print(..., flush=True)`; `export_keypoints.py` stampa ogni passo con il tempo trascorso.
+  5. **Regola:** prima prova breve in **sessione interattiva** (`--limit 256`, `timeout`), poi l'esecuzione completa; Save & Run All solo per lavori già provati.
 - YOLO: `yolo11n-pose`, 10 epoche, batch 64, imgsz 256, ~22 min su GPU Kaggle. `mAP50(P)` 0.90 (plateau dall'epoca 8). Più epoche da sole servono poco (divario train/val); leve migliori: sfondi (passo 1.8), modello più grande, più semi.
 
 **Prossimi passi (nessun piano di implementazione scritto oltre lo scheletro)**
 1. Disambiguazione temporale IPPE (flip 7.2% con YOLO, a blocchi: continuità temporale, §2 strategia b).
+   **2026-10-14: piano di implementazione scritto** in `docs/superpowers/plans/2026-10-14-disambiguazione-sensibilita.md` (6 task: strategie (a)/(b)/(c) in `pose/disambiguation.py`, pipeline a due passate, replay offline, sensibilità 2.3 inclusa, export keypoint val/test su Kaggle, taratura soglie sulla sola val). Replay del 2026-10-14 su `14_03_09` con il codice del piano: (a) 26 flip, (b) 6 = oracolo, (c) 1 flip con copertura 94.7%; passo di rotazione GT max 4.6°/frame. Esecuzione nell'altra sessione.
 2. Misurare su tutte le scene di val e di test (setting A/B/C), più semi, bootstrap appaiato.
 3. Detector del drone nel frame (per setting B e per video reali) e fase R (dati reali, M11).
 4. Fase 3 (traiettorie) e promemoria §7bis sulle unità in metri veri.
 5. Rinviati dalla revisione finale: `INTER_AREA` inefficace in `warpAffine`; `package_cache.py` da `git archive HEAD`; confidenza per keypoint; ripresa con `--data` personalizzato.
+
+## 6quater. Avanzamento del piano disambiguazione + sensibilità (aggiornato 2026-10-14)
+
+Piano: `docs/superpowers/plans/2026-10-14-disambiguazione-sensibilita.md`. Eseguito inline (Native), **ordine: Task 5, 1, 2**, poi 3, 4, 6 (il 5 prima perché la parte Kaggle va lanciata subito e non dipende dal 4).
+- [x] Task 5 — export keypoint YOLO (`keypoints/export.py`, `scripts/kaggle/export_keypoints.py`, README Kaggle §5). **Passo utente aperto:** lanciare su Kaggle (~~consigliato "Save & Run All"~~ 2026-10-15: prima prova breve in sessione interattiva, vedi trappole Kaggle in §6ter; GPU + Internet On) con input `dronepose-cache`, `dronepose-code` (New Version dopo il 2026-10-14) e `dronepose-weights` (zip di `best.pt`: `data/dronepose-weights.zip`, fuori da git). Output atteso: `keypoints.zip` con `val: 12600` e `test: 5040`; scaricarlo dalla pagina della versione (Versions → Output) in `experiments/keypoints/`. Lo script **non è mai stato eseguito** (ultralytics non installato in locale): se la versione fallisce, leggere il log.
+- [x] Task 1 — `pose/disambiguation.py` (strategie `reproj`, `temporal`, `temporal_reject`; `TemporalParams`; `Choice`).
+- [x] Task 2 — pipeline a due passate (`ippe_candidates`, `assemble_results`, `run_sequence(strategy=..., params=...)`); default `reproj`, riepilogo `gt` identico a prima. Nuovi campi per frame: `solution_index`, `rejected`, `reject_reason`, `reproj_ratio` (`null` se infinito), `oracle_rot_err_deg`; `summarize` in più: `n_rejected`, `coverage`, `p90_rot_err_deg`, `oracle_flip_rate`. `no_detection()` ora è pubblica (rename fatto col Task 5).
+- [x] Task 3 — `pose/replay.py` + `scripts/replay_disambiguation.py` (su `14_03_09` con keypoint YOLO: reproj 7.22%, temporal 1.67% = oracolo, temporal_reject 0.29% con copertura 94.7%).
+- [x] Task 4 — `pose/sensitivity.py` + `scripts/sensitivity_pnp.py` (matplotlib come extra `plots`; val, 3 semi, ~2 min, output in `experiments/sensitivity/`). Su keypoint GT + rumore σ: flip reproj/temporal/reject = 1.1/0.5/2.0% (σ 0.5), 7.0/2.2/3.4% (σ 2), 17.3/10.6/9.0% (σ 5), 30.1/29.1/19.0% (σ 10); rotazione mediana ≈ 0.26° (σ 0.5), 1.0° (σ 2), 7° (σ 10); copertura reject 98%→80%. Profondità: errore relativo 0.15% (σ 0.5) … 4.5% (σ 10), cresce poco con la distanza. Modello in scala sbagliata: profondità stimata/vera = scala (0.8…1.2), rotazione invariata (~0.016°). **Da indagare nel Task 6:** a rumore basso (σ ≤ 2) `temporal_reject` ha **più** flip di `temporal` (2.0 vs 0.5% a σ 0.5; 3.0 vs 1.1% a σ 1): il rifiuto sembra rompere la catena di riferimento dopo frame scartati.
+- [ ] Task 6 (valutazione su tutta la val con i keypoint YOLO di Kaggle, scelta soglie, registrazione). Risultato dell'export Task 5 in `results/` (non ancora controllato, non in `.gitignore`).
+
+Da ricordare:
+- **Regola test:** le scene 06 e 07 non si usano per tarare nulla; gli script di replay rifiutano record di test senza `--allow-test`. Soglie scelte solo sulla val.
+- Con keypoint GT le tre strategie danno lo stesso risultato (nessuna ambiguità): il confronto vero si vede solo con i keypoint YOLO.
+- Le sezioni di piano non ancora fatte potrebbero richiedere conferma dei parametri (`reanchor_ratio` 3.0, `reanchor_frames` 3, `max_gap` 5, `max_jump_deg` 20, `max_reproj_px` 20): sono punti di partenza, da tarare sulla val nel Task 6.
+- File non committati dell'utente: il piano stesso e `scripts/make_checkerboard.py`.
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
