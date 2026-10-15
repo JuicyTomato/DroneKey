@@ -15,8 +15,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "matplotlib>=3.8"]
 train = ["ultralytics>=8.3"]
+plots = ["matplotlib>=3.8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
