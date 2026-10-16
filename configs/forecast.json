@@ -1,0 +1,21 @@
+{
+  "fps": 30,
+  "obs_len": 15,
+  "pred_len": 30,
+  "horizons_s": [0.1, 0.333, 0.5, 1.0],
+  "dji_diagonal_mm": {"01": 247, "02": 213, "03": 362, "04": 302, "05": 354, "06": 380.1, "08": null},
+  "motion_type": {
+    "01": "linear", "02": "linear", "03": "linear", "07": "linear", "08": "linear", "09": "linear",
+    "04": "nonlinear", "05": "nonlinear", "06": "nonlinear", "11": "nonlinear", "12": "nonlinear",
+    "13": "nonlinear", "14": "nonlinear"
+  },
+  "cv_k_grid": [2, 3, 5, 10],
+  "ca_k_grid": [3, 5, 10],
+  "kf_cv_q_grid": [1e-1, 1, 10, 100, 1000, 10000, 100000, 1000000],
+  "kf_ca_q_grid": [1e-1, 1, 10, 100, 1000, 10000, 100000, 1000000],
+  "kf_r_grid": [1e-6, 1e-4, 1e-3, 1e-2],
+  "g": 9.81,
+  "max_tilt_deg": 60,
+  "bootstrap_b": 10000,
+  "bootstrap_seed": 0
+}
