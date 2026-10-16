@@ -69,6 +69,7 @@ PLAN = {
         "script": ["scripts/forecast"],
         "test": ["tests/forecast"],
         "risultati": ["experiments/forecast/tuning", "experiments/forecast/baselines_val"],
+        "video_e_fotogrammi": ["experiments/forecast/videos"],
         "documenti": ["docs/superpowers/specs/2026-10-16-fase3-dataset-baseline-design.md",
                       "docs/superpowers/plans/2026-10-16-fase3-dataset-baseline.md"],
     },

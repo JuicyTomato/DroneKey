@@ -482,6 +482,8 @@ Skill **FDE** a 1 s (gruppo in metri): CA +12.6% [+2.2, +25.2], Kalman CA +13.2%
 
 **Limiti:** val di 3 scene (non lineare = una sola scena); pose GT senza rumore (con pose stimate, E4b, i `k` e le `r` scelti cambieranno: si ritarano sulle pose rumorose del train); 08 in unità del dataset; nessun test toccato.
 
+**Video delle previsioni** (`scripts/forecast/make_forecast_video.py`, serve il disco; vista camera con inset ingrandito + pannello dall'alto; futuro vero verde sotto le previsioni): `experiments/forecast/videos/` per `14_02_07` (non lineare: CA ≈ vero, FDE media 1 s CV 0.07 / CA 0.03 m), `09_06_10` (virata brusca a keyframe: tutte sbagliano, CV 1.37 / CA 1.60 m), `11_06_12` (train, inclinazione fino a 65°: fisica 4.27 m contro CA 0.08 m). Ogni video ha un fotogramma di esempio `*_frameNNNN.jpg`.
+
 **Prossimi passi della Fase 3:** 3.1b generatore con differential flatness (dove la baseline fisica ha senso), 3.3 reti GRU/LSTM (riferimento CV-2), 3.6 ablation; 3.5 dopo l'export delle pose (2.6).
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
