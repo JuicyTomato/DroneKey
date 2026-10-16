@@ -430,6 +430,28 @@ Sonda locale (usa-e-getta, non nel repo; val, keypoint YOLO setting A, strategia
 
 **Conclusione:** per il 08 la posizione e la verticale sono utilizzabili; solo l'imbardata è ambigua a multipli di 90°. Il segnale per risolverla (la piccola camera frontale) è visibile solo nell'immagine, quindi serve un modello migliore, non una regola geometrica o temporale. **Implicazioni:** (i) in valutazione e in tesi riportare per i droni quasi simmetrici l'errore di rotazione **a meno della simmetria**, accanto a quello grezzo; (ii) in Fase 3, per il 08 usare ingressi indipendenti dall'imbardata (asse "su", roll/pitch, posizione e velocità) o l'imbardata ridotta modulo 90°; (iii) un riaddestramento mirato (risoluzione, peso sul 08, cue dedicato al davanti) è un esperimento della Fase 1, di esito incerto e da pianificare a parte.
 
+## 6nonies. Stato e promemoria per la sessione successiva (2026-10-16)
+
+**Fatto e committato** (ultimo commit al momento della scrittura: `feat: symmetry-aware rotation error`): scheletro end-to-end (piano 2026-10-12); strategie IPPE (a) riproiezione, (b) continuità, (c) continuità + rifiuto, replay, sensibilità, export keypoint (piano 2026-10-14); strategia (d) `global` con taratura e revisione finale (piano 2026-10-15); sonda sul drone 08 e metrica "a meno della simmetria" (`rot_err_sym_deg`). Revisioni finali fatte per tutti e tre i piani; Minor rinviati nel registro locale `.superpowers/sdd/2026-10-12-fase0-scheletro/progress.md`.
+
+**Passi dell'utente ancora aperti** (non li può fare Claude):
+1. Task 12 dello scheletro: prova di ripristino da un clone pulito (`git clone` di `https://github.com/JuicyTomato/DroneKey.git`, `pip install -e ".[dev]"`, `pytest`; poi `verify_manifest.py` con il disco) e copia manuale su OneDrive di `data/dronepose-cache.zip`, `data/manifest/`, `configs/drone_models.json`, `experiments/`.
+2. Video dello scheletro con YOLO e la strategia scelta su Kaggle (README Kaggle §4 con `--strategy global`); prima rigenerare `data/dronepose-code.zip` con `scripts/package_cache.py` e ricaricarlo come New Version (lo zip su Kaggle è precedente a `global`).
+3. Quota privata Kaggle fino a 200 GB: la decisione "≤ 20 GB" (2026-10-10) è **da confermare**.
+4. `scripts/make_checkerboard.py` è dell'utente, non committato.
+
+**Prossima sessione: Fase 3 (predizione della traiettoria)** — nel piano di lavoro è il ramo che "parte subito" (non dipende dai keypoint): T1 = 2.3 (fatto) + 3.2 baseline + 3.4 valutazione oracle (E4a) + 3.6 ablation. Si parte con il brainstorming sul **3.1** (dataset di traiettorie: 91 deduplicate, finestre N = 15 / H = 30, frame allineato alla gravità) e sul **3.2** (posizione costante, CV, CA, Kalman, baseline fisica), poi 3.1b (generatore con differential flatness) e 3.3 (GRU/LSTM). Promemoria §7bis: conversione in **metri veri** per classe solo in Fase 3 (Tello escluso finché manca una dimensione verificata). **Per il drone 08 usare ingressi indipendenti dall'imbardata** (asse "su", roll/pitch, posizione e velocità): la sua imbardata è ambigua a multipli di 90° (§6octies). In parallelo, quando c'è budget: Fase 1 (E1: YOLO-Pose contro DroneKey, 3 semi) su Kaggle (~30 h/settimana); il piano di lavoro dice che la Fase 0 completa (0.6, 0.7, 0.8, 0.10) e la Fase R (dati reali) non sono iniziate.
+
+**Rinviato / da riprendere dopo** (decisione dell'utente: ora correzioni piccole, quelle approfondite in un secondo tempo):
+- Drone 08 a fondo: riaddestramento mirato (risoluzione, peso sul 08, cue sul davanti), esperimento della Fase 1.
+- `global`: scala `√dt` nel salto angolare (memoria del riferimento oggi ~20–30 frame), versione causale/a finestra scorrevole, valutazione della gravità (`--up`) su dati reali, guardia NaN (una riga: un `reproj_px` o una `R` NaN fa scartare tutti i frame), motivo "gravity" separato, test di ottimalità per forza bruta.
+- Altri Minor: docstring di `compare_strategies.py` ("tre strategie"), copertura di `global` nella sintesi della sensibilità, definizione unica di "senza 08" (media dei droni 0.86% contro aggregato 0.84%), `check_no_test` in `run_skeleton.py`.
+- Il test (scene 06, 07) non è mai stato toccato: si usa **una sola volta**, alla fine.
+
+**Cartella `PerTesi/`** (locale, fuori da git): copie in ordine di processo per scrivere la tesi (vedi `PerTesi/README.md`).
+
+**Regole di lavoro invariate:** commit solo dopo il consenso, uno per task, messaggi molto corti, nessun trailer Co-Authored-By, push solo se richiesto; esecuzione dei piani in modo Native con revisione finale a contesto pulito.
+
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
 - **Precisazione 2026-10-08 (chiarita con l'utente):** il PnP a runtime **non scopre** la dimensione del drone: riceve il modello 3D (distanze tra rotori) come input fisso e ne ricava `t`. Un drone in scala 1:2 a metà distanza dà gli stessi pixel → la distanza assoluta richiede **classe nota + dimensioni vere**; classe ignota = solo direzione e forma della traiettoria. In **fase 2 sul sintetico** si usa il modello ricavato dal dataset (`flu_model.py`): `t` esce già nelle unità della GT, nessun errore di scala. L'errore "34 vs 28 cm" (PnP compensa con la distanza, fattore 28/34) nasce solo se il modello PnP ha scala diversa da quella di rendering: sintetico con specifiche DJI al posto del modello dati (**da non fare**) oppure reale con specifiche sbagliate. La conversione in metri è solo una moltiplicazione per classe, applicata quando servono metri veri (fase 3, reale).
