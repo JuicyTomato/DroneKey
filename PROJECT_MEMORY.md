@@ -387,7 +387,34 @@ Da fare: (Task 6 passo 4, utente) video dello scheletro con `--strategy temporal
 
 ## 6sexies. Difetto di `temporal_reject`: diagnosi e passaggio di sessione (2026-10-15)
 
-Dopo i video di confronto (`scripts/compare_strategies.py`, `experiments/compare/`) è emerso un difetto di (c): dopo una raffica di scarti (> `max_gap` = 5 frame) il riferimento viene dimenticato, il primo frame accettato sceglie per riproiezione con rapporto ≈ 1.1 (lancio di moneta), e la continuità poi si auto-rinforza sulla soluzione sbagliata (esempio: `14_02_07_000`, frame 287–360 a 172–179°). Evidenze: `max_gap` ≥ 15 porta i flip senza il drone 08 da 0.86% a 0.03% (drone 02: 5.2% → 0.2%) a copertura invariata; un gate di gravità (inclinazione ≤ 70°) da solo dà 0.27% senza storia, perché il 94% delle candidate in flip è "a testa in giù"; il drone 08 resta a ~39% (confusione di identità, problema separato). **Tutto il contesto, le idee candidate (A–G), i criteri di successo e il prompt per la nuova sessione sono in `docs/superpowers/handoff/2026-10-15-fix-temporal-reject.md`.** Diagnostica riproducibile: `scripts/diagnose_disambiguation.py {trace|maxgap|gravity}`. Non ancora deciso: quali soluzioni adottare (si valutano con l'utente in una nuova sessione).
+Dopo i video di confronto (`scripts/compare_strategies.py`, `experiments/compare/`) è emerso un difetto di (c): dopo una raffica di scarti (> `max_gap` = 5 frame) il riferimento viene dimenticato, il primo frame accettato sceglie per riproiezione con rapporto ≈ 1.1 (lancio di moneta), e la continuità poi si auto-rinforza sulla soluzione sbagliata (esempio: `14_02_07_000`, frame 287–360 a 172–179°). Evidenze: `max_gap` ≥ 15 porta i flip senza il drone 08 da 0.86% a 0.03% (drone 02: 5.2% → 0.2%) a copertura invariata; un gate di gravità (inclinazione ≤ 70°) da solo dà 0.27% senza storia, perché il 94% delle candidate in flip è "a testa in giù"; il drone 08 resta a ~39% (confusione di identità, problema separato). **Tutto il contesto, le idee candidate (A–G), i criteri di successo e il prompt per la nuova sessione sono in `docs/superpowers/handoff/2026-10-15-fix-temporal-reject.md`.** Diagnostica riproducibile: `scripts/diagnose_disambiguation.py {trace|maxgap|gravity}`. **2026-10-15 (stessa sessione):** scelto l'approccio 2 (decisione globale, programmazione dinamica) come nuova strategia `global`, con gravità solo opzionale (`up` esplicito, spenta di default); design in corso in `docs/superpowers/specs/` (spec) e poi piano.
+
+**Idea dell'utente da fare a fine di questo pezzo:** cartella `PerTesi/` con sottocartelle numerate **in ordine di processo** (`1_...`, `2_...`): ognuna con **copie** dei file e dei dati, e una spiegazione dell'obiettivo, di cosa si è trovato/scoperto/costruito; la successiva = passi seguenti o sistemazione della precedente. Serve solo ad agevolare la scrittura della tesi in un secondo momento. **È locale e fuori da git** (`/PerTesi/` è in `.gitignore`): duplica file già versionati altrove, quindi non va committata. Da progettare insieme (cosa copiare; niente frame di 6DroneSyn nel repo).
+
+## 6septies. Strategia `global` (decisione globale): risultati (2026-10-15/16)
+
+Nuova strategia (d) `global` in `src/dronepose/pose/global_disambiguation.py`: sceglie per ogni frame tra le due soluzioni IPPE (o "scartato") minimizzando sull'**intera sequenza** la somma di riproiezione (`reproj_px / 10`), salto angolare tra pose accettate normalizzato sul tempo vero (`min(z, z_cap)²`, `z = angolo / (5° · Δt)`) e costo di scarto (`reject_cost` per frame); programmazione dinamica, **offline**; gravità opzionale (`up` esplicito, spenta di default: i droni possono fare evoluzioni o accelerazioni forti che superano la soglia di 70°). Spec: `docs/superpowers/specs/2026-10-15-global-disambiguation-design.md`; piano: `docs/superpowers/plans/2026-10-15-global-disambiguation.md` (verificato in un worktree isolato prima dell'esecuzione). Risolve il difetto di (c): dopo una raffica di scarti non perde il riferimento e le pose successive "votano" sulle scelte ambigue precedenti.
+
+**Tutta la val** (keypoint YOLO, setting A; `experiments/replay_val_global/`):
+
+| Strategia | Flip | Copertura | Senza drone 08: flip / copertura |
+|---|---|---|---|
+| (a) `reproj` | 15.52% | 100% | 11.11% / 100% |
+| (b) `temporal` | 11.27% | 100% | 6.63% / 100% |
+| (c) `temporal_reject` | 6.16% | 95.2% | 0.84% / 95.6% |
+| **(d) `global`** | **5.34%** | 95.3% | **0.00% / 95.9%** |
+
+Oracolo (migliore delle due soluzioni) 6.81%. Per sequenza (`per_sequence.csv`): **0** sequenze dei droni 01–06 in cui `global` ha più di 2 punti di flip in più di (a) e (b); 2 sequenze del drone 08 (`03_08_04_180` +2.9, `03_08_05_180` +2.0), dove domina la confusione di identità (sul drone 08 `global` resta ~39%, nelle sequenze peggiori ~58%).
+
+**Sequenze di riferimento** (flip % a / b / c / d): `09_03_01_000` 20.8 / 0.0 / 0.0 / 0.0 · `03_01_07_180` 20.8 / 38.3 / 0.0 / 0.0 · **`14_02_07_000` 14.2 / 1.4 / 20.1 / 0.0** (343 pose su 360) · `14_08_03_000` (drone 08) 59.7 / 56.1 / 58.0 / 57.7. Video e fotogrammi a quattro pannelli in `experiments/compare/` (script `scripts/compare_strategies.py`).
+
+**Parametri** (`GlobalParams`): fissi `step_deg` 5° (p99 GT 4.5°), `max_reproj_px` 20, `reproj_scale` 10, `max_span` 60, `max_tilt_deg` 70 (solo con `up`); tarati `reject_cost` **12** e `z_cap` **6**. Griglia 3 × 4 con leave-one-scene-out sulle scene di val 03, 09, 14 (`scripts/tune_global.py`, `experiments/tune_global/`): scelta finale 12 / 6 (0.00% senza il 08, copertura 95.9%), ma **instabile tra i giri**: tenendo fuori la scena 14 la taratura su 03 e 09 sceglie `z_cap` 4, che sulla 14 dà 2.23% di flip; tenendo fuori la 03 la copertura scende a 93.6%. Plateau: `z_cap` ≥ 6 (con `z_cap` 2 il drone 01 arrivava al 23.9% di flip). Con sole tre scene di val è un limite da dichiarare.
+
+**Sensibilità** (keypoint GT + rumore σ, 3 semi, val; `experiments/sensitivity/`), flip % a / b / c / d: σ 0.5: 1.1 / 0.5 / 2.0 / 0.0 · σ 2: 7.0 / 2.2 / 3.4 / 0.0 · σ 5: 17.3 / 10.6 / 9.0 / 0.0 · σ 7: 23.2 / 17.5 / 13.4 / 0.6 · σ 10: 30.1 / 29.1 / 19.0 / 2.1. A rumore basso `global` non peggiora rispetto a (b), a differenza di (c). Il rumore reale di YOLO (~9 px) è più alto dei σ in cui questo test è facile: la sensibilità è con keypoint GT, quindi non include la confusione di identità.
+
+**Limiti dichiarati:** offline (serve tutta la sequenza; versione a finestra scorrevole non fatta); drone 08 non risolto (identità dei keypoint: piano separato); con un buco più lungo di `max_span` (60 frame) le due catene tornano equivalenti e decide la riproiezione; gravità non valutata (`--up`); taratura su tre scene di val, instabile tra i giri; test (scene 06, 07) mai toccato; parametri tarati su keypoint YOLO del setting A (crop dal box GT).
+
+**Da fare dopo:** revisione finale del piano; cartella locale `PerTesi/` (vedi §6sexies); piano per il drone 08 (correzione di identità col tracking); valutare la gravità e la versione causale; test finale una sola volta alla fine.
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
