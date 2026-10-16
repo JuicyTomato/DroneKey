@@ -64,6 +64,14 @@ PLAN = {
         "test": ["tests/test_symmetry_metric.py"],
         "risultati": ["experiments/summary/drone08_probe_output.txt"],
     },
+    "7_Fase3_dataset_e_baseline": {
+        "codice": [f"{S}/forecast", "configs/forecast.json"],
+        "script": ["scripts/forecast"],
+        "test": ["tests/forecast"],
+        "risultati": ["experiments/forecast/tuning", "experiments/forecast/baselines_val"],
+        "documenti": ["docs/superpowers/specs/2026-10-16-fase3-dataset-baseline-design.md",
+                      "docs/superpowers/plans/2026-10-16-fase3-dataset-baseline.md"],
+    },
 }
 
 

@@ -3,7 +3,7 @@
 Memoria viva del progetto: decisioni prese, fatti verificati sui dati, problemi aperti, idee future.
 Aggiornare a ogni decisione. Non cancellare voci: marcarle come superate (~~barrato~~ + data + motivo).
 
-Ultimo aggiornamento: 2026-10-14
+Ultimo aggiornamento: 2026-10-16
 
 ---
 
@@ -442,7 +442,9 @@ Sonda locale (usa-e-getta, non nel repo; val, keypoint YOLO setting A, strategia
 3. Quota privata Kaggle fino a 200 GB: la decisione "≤ 20 GB" (2026-10-10) è **da confermare**.
 4. `scripts/make_checkerboard.py` è dell'utente, non committato.
 
-**Prossima sessione: Fase 3 (predizione della traiettoria)** — nel piano di lavoro è il ramo che "parte subito" (non dipende dai keypoint): T1 = 2.3 (fatto) + 3.2 baseline + 3.4 valutazione oracle (E4a) + 3.6 ablation. Si parte con il brainstorming sul **3.1** (dataset di traiettorie: 91 deduplicate, finestre N = 15 / H = 30, frame allineato alla gravità) e sul **3.2** (posizione costante, CV, CA, Kalman, baseline fisica), poi 3.1b (generatore con differential flatness) e 3.3 (GRU/LSTM). Promemoria §7bis: conversione in **metri veri** per classe solo in Fase 3 (Tello escluso finché manca una dimensione verificata). **Per il drone 08 usare ingressi indipendenti dall'imbardata** (asse "su", roll/pitch, posizione e velocità): la sua imbardata è ambigua a multipli di 90° (§6octies). In parallelo, quando c'è budget: Fase 1 (E1: YOLO-Pose contro DroneKey, 3 semi) su Kaggle (~30 h/settimana); il piano di lavoro dice che la Fase 0 completa (0.6, 0.7, 0.8, 0.10) e la Fase R (dati reali) non sono iniziate.
+**2026-10-16, aggiornamento:** 3.1 e 3.2 fatti, vedi §6decies; prossimi passi della Fase 3 in fondo a §6decies.
+
+~~**Prossima sessione: Fase 3 (predizione della traiettoria)**~~ (fatto 3.1 + 3.2, §6decies) — nel piano di lavoro è il ramo che "parte subito" (non dipende dai keypoint): T1 = 2.3 (fatto) + 3.2 baseline + 3.4 valutazione oracle (E4a) + 3.6 ablation. Si parte con il brainstorming sul **3.1** (dataset di traiettorie: 91 deduplicate, finestre N = 15 / H = 30, frame allineato alla gravità) e sul **3.2** (posizione costante, CV, CA, Kalman, baseline fisica), poi 3.1b (generatore con differential flatness) e 3.3 (GRU/LSTM). Promemoria §7bis: conversione in **metri veri** per classe solo in Fase 3 (Tello escluso finché manca una dimensione verificata). **Per il drone 08 usare ingressi indipendenti dall'imbardata** (asse "su", roll/pitch, posizione e velocità): la sua imbardata è ambigua a multipli di 90° (§6octies). In parallelo, quando c'è budget: Fase 1 (E1: YOLO-Pose contro DroneKey, 3 semi) su Kaggle (~30 h/settimana); il piano di lavoro dice che la Fase 0 completa (0.6, 0.7, 0.8, 0.10) e la Fase R (dati reali) non sono iniziate.
 
 **Rinviato / da riprendere dopo** (decisione dell'utente: ora correzioni piccole, quelle approfondite in un secondo tempo):
 - Drone 08 a fondo: riaddestramento mirato (risoluzione, peso sul 08, cue sul davanti), esperimento della Fase 1.
@@ -453,6 +455,34 @@ Sonda locale (usa-e-getta, non nel repo; val, keypoint YOLO setting A, strategia
 **Cartella `PerTesi/`** (locale, fuori da git): copie in ordine di processo per scrivere la tesi (vedi `PerTesi/README.md`).
 
 **Regole di lavoro invariate:** commit solo dopo il consenso, uno per task, messaggi molto corti, nessun trailer Co-Authored-By, push solo se richiesto; esecuzione dei piani in modo Native con revisione finale a contesto pulito.
+
+## 6decies. Fase 3: dataset di traiettorie (3.1) e baseline (3.2) — risultati sulla val (2026-10-16)
+
+Spec: `docs/superpowers/specs/2026-10-16-fase3-dataset-baseline-design.md`; piano: `docs/superpowers/plans/2026-10-16-fase3-dataset-baseline.md` (10 task, Native). Codice **separato** in `src/dronepose/forecast/` (+ `scripts/forecast/`, `tests/forecast/`, `configs/forecast.json`); il codice esistente non è stato modificato. Dati: `data/processed/forecast/` (da `scripts/forecast/build_trajectories.py`, 1 s, solo dai JSONL canonici). Risultati: `experiments/forecast/tuning/`, `experiments/forecast/baselines_val/` (`table.md`, `table.json`, `per_window.csv`, `ade_fde_vs_horizon.png`).
+
+**Fatti verificati:** camera in bolla esatta su tutti i 91 file (`y_cam = −0.582·z_world`, scarto 0 su 211.680 keypoint; test su disco `test_raw_camera_is_level`) → frame della gravità `G = C·camera` con `C = [[1,0,0],[0,0,1],[0,−1,0]]`; copie per sfondo identiche al bit → 56 / 21 / 14 traiettorie; finestre N 15 / H 30: 9296 / 3276 / 1064 (in metri 7968 / 2808 / 912); `s_c` = 01 0.7463 · 02 0.8053 · 03 0.8525 · 04 0.9334 · 05 0.9253 · 06 0.8521 (calcolati dal modello, 08 escluso); **la scena 03 non è moto uniforme** (ease-in/out), quindi il criterio "CV esatta sulla scena 03" è stato sostituito da un test su moto sintetico.
+
+**Taratura sul train** (`tune_baselines.py`, 11 s): CV `k` = 2, CA `k` = 3 (i minimi possibili: il fit più corto vince su traiettorie GT senza rumore), Kalman CV `q` = 1e6 `r` = 1e-6 (**plateau** per `q ≥ 100`, differenze < 1e-5: l'avviso di bordo su `q` è innocuo; griglia spostata a 1e-1…1e6), Kalman CA `q` = 1e3 `r` = 1e-6. Gli avvisi di bordo coprono anche `r` (dalla revisione finale): `r` = 1e-6 è al bordo basso, ma **sul GT senza rumore si identifica solo il rapporto `q/r`** (con la griglia estesa a `r` = 1e-8 il CA sceglie `q` = 10, `r` = 1e-8, stesso rapporto 1e9, numeri sulla val identici; a `q` = 1e3, `r` = 1e-6 è un minimo interno): griglia lasciata come nella spec. In E4b, con pose rumorose, la `r` diventa identificabile: allargare la griglia verso l'alto (≥ 1e-1). Riferimento fisso della skill per tutta la Fase 3: **CV-2**.
+
+**Val, gruppo in metri (18 traiettorie, 2808 finestre), FDE media a 0.5 / 1 s (m) e skill ADE a 1 s vs CV-2 (IC 95% bootstrap appaiato per traiettoria, stratificato per scena, 10 000 repliche):**
+
+| Metodo | FDE 0.5 s | FDE 1 s | Skill ADE 1 s |
+|---|---|---|---|
+| posizione costante | 0.174 | 0.328 | −161% [−237, −114] |
+| CV-15 (scheletro) | 0.095 | 0.243 | −62% [−65, −60] |
+| CV-2 | 0.052 | 0.179 | 0 |
+| CA-3 | 0.027 | 0.156 | +29.8% [+21.8, +39.9] |
+| Kalman CV | 0.050 | 0.176 | +1.9% [+1.8, +1.9] |
+| **Kalman CA** | 0.027 | **0.155** | **+30.5% [+22.6, +40.6]** |
+| fisica (inclinazione) | 0.369 | 1.466 | −666% [−1062, −370] |
+
+Skill **FDE** a 1 s (gruppo in metri): CA +12.6% [+2.2, +25.2], Kalman CA +13.2% [+2.9, +25.8]. Per tipo di moto, Kalman CA: lineare ADE +19.8% [+11.6, +31.3] ma **FDE −1.6% [−12.2, +12.6]** (nessun guadagno a 1 s; scene 03, 09); non lineare ADE +51.2% [+42.5, +59.8], FDE +40.1% [+29.6, +50.9] (solo la scena 14). Sulla scena 09 (lineare ma veloce) la FDE a 1 s è 0.661 (CV), 0.689 (CA), 0.684 (Kalman CA): CA leggermente peggio. Drone 08 (unità del dataset, riga a parte): FDE 1 s CV 0.110, Kalman CA 0.083, skill +39%. Orientamento (gruppo in metri, errore a 1 s): costante 30.7° geodetico / 8.5° asse su; velocità angolare costante 12.8° / 5.0°. Controllo di coerenza: FDE 1 s mediana di CV-15 su `09_06` = 1.8935 m (atteso 2.2223 × 0.8521 = 1.894).
+
+**Lettura:** (1) sul GT senza rumore vincono i fit più corti e l'accelerazione: le traiettorie a keyframe sono lisce; CA/Kalman CA riducono l'**ADE** a 1 s di circa il 30% e l'**FDE** a 1 s di circa il 13% rispetto a CV, con il guadagno concentrato sul moto non lineare (sulle scene lineari l'FDE a 1 s non migliora); il Kalman CV a `q` grande si comporta come un filtro α-β e guadagna un +1.9% costante su CV-2 (ritardo della velocità minore); (2) la **baseline fisica è molto peggio di CV**, come previsto dal §3.11 (assetto scollegato dal moto: inclinazioni fino a 60° con accelerazione nulla); il suo valore va misurato sulle traiettorie generate (3.1b); (3) CV-15 dello scheletro è troppo lenta a reagire (−62%).
+
+**Limiti:** val di 3 scene (non lineare = una sola scena); pose GT senza rumore (con pose stimate, E4b, i `k` e le `r` scelti cambieranno: si ritarano sulle pose rumorose del train); 08 in unità del dataset; nessun test toccato.
+
+**Prossimi passi della Fase 3:** 3.1b generatore con differential flatness (dove la baseline fisica ha senso), 3.3 reti GRU/LSTM (riferimento CV-2), 3.6 ablation; 3.5 dopo l'export delle pose (2.6).
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
