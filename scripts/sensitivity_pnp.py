@@ -12,10 +12,12 @@ from dronepose.pose.disambiguation import STRATEGIES
 from dronepose.pose.replay import check_no_test
 from dronepose.pose.sensitivity import SIGMAS, run_noise, run_scale
 
-# Validated categorical palette (dataviz reference, light): fixed order, one colour per strategy.
-COLORS = {"reproj": "#2a78d6", "temporal": "#eb6834", "temporal_reject": "#1baf7a"}
-MARKERS = {"reproj": "o", "temporal": "s", "temporal_reject": "^"}
-LABELS = {"reproj": "(a) riproiezione", "temporal": "(b) continuità", "temporal_reject": "(c) continuità + rifiuto"}
+# Categorical palette (dataviz reference, light): fixed order, one colour per strategy; the 4th colour (global)
+# was not run through the validator: markers and direct labels keep the lines distinguishable.
+COLORS = {"reproj": "#2a78d6", "temporal": "#eb6834", "temporal_reject": "#1baf7a", "global": "#8e5ad1"}
+MARKERS = {"reproj": "o", "temporal": "s", "temporal_reject": "^", "global": "D"}
+LABELS = {"reproj": "(a) riproiezione", "temporal": "(b) continuità", "temporal_reject": "(c) continuità + rifiuto",
+          "global": "(d) globale"}
 INK, MUTED, SURFACE = "#1f1f1e", "#6b6a64", "#fcfcfb"
 
 ap = argparse.ArgumentParser()
@@ -72,7 +74,7 @@ def line_per_strategy(key, scale, title, ylabel, fname):
         ys = [mean_over_seeds(noise_rows, st, s, key) for s in SIGMAS]
         ys = [None if y is None else y * scale for y in ys]
         ax.plot(SIGMAS, ys, color=COLORS[st], marker=MARKERS[st], markersize=8, linewidth=2, label=LABELS[st])
-        dy = {"reproj": 7, "temporal": -7, "temporal_reject": 0}[st]     # keep direct labels apart at sigma = 10
+        dy = {"reproj": 9, "temporal": -3, "temporal_reject": 8, "global": -10}[st]     # keep direct labels apart at sigma = 10
         ax.annotate(LABELS[st], (SIGMAS[-1], ys[-1]), xytext=(6, dy), textcoords="offset points",
                     color=INK, fontsize=8, va="center")
     styled(ax, title, "rumore sui keypoint σ (px)", ylabel)

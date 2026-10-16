@@ -19,8 +19,10 @@ from dronepose.data.drone_models import load_drone_models
 from dronepose.pose.disambiguation import STRATEGIES
 from dronepose.pose.replay import check_no_test, load_keypoints, replay
 
-NAMES = {"reproj": "(a) riproiezione", "temporal": "(b) continuita", "temporal_reject": "(c) continuita + rifiuto"}
-BGR = {"reproj": (214, 120, 42), "temporal": (52, 104, 235), "temporal_reject": (122, 175, 27)}   # plan palette
+NAMES = {"reproj": "(a) riproiezione", "temporal": "(b) continuita", "temporal_reject": "(c) continuita + rifiuto",
+         "global": "(d) globale"}
+BGR = {"reproj": (214, 120, 42), "temporal": (52, 104, 235), "temporal_reject": (122, 175, 27),
+       "global": (209, 90, 142)}   # plan palette
 PANEL, HEAD, STRIP = 480, 58, 150
 
 ap = argparse.ArgumentParser()
@@ -42,7 +44,7 @@ results = {s: replay(records, kpts, models, s)[args.sequence] for s in STRATEGIE
 n = len(records)
 
 # ---- timeline strip (static background, cursor drawn per frame) ----
-W = PANEL * 3
+W = PANEL * len(STRATEGIES)
 strip_bg = np.full((STRIP, W, 3), 252, np.uint8)
 ymax = 180.0
 y_of = lambda e: int(STRIP - 14 - min(e, ymax) / ymax * (STRIP - 28))
