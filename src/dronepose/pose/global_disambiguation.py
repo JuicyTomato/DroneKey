@@ -3,8 +3,10 @@
 Cost of a path = sum over accepted frames of reproj_px / reproj_scale
                + sum over consecutive accepted frames of min(z, z_cap)^2, z = geodesic_deg / (step_deg * dt)
                + reject_cost for every frame that is not accepted.
-The path with the lowest total cost wins, so later frames vote on earlier ambiguous ones and a burst of rejected
-frames never makes the reference disappear (after max_span frames the chain restarts at the fixed cost z_cap^2).
+The path with the lowest total cost wins, so later frames vote on earlier ambiguous ones. Across a burst of rejected
+frames the reference fades with the length of the burst: a jump of 180 degrees over dt frames costs about
+(36 / dt)^2, so beyond roughly 20-30 frames the two chains become nearly equivalent (measured: a 14-frame burst is
+bridged, 30 frames is not). Beyond max_span frames the chain restarts at the fixed cost z_cap^2.
 """
 import math
 from dataclasses import dataclass

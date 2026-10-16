@@ -2,7 +2,7 @@
 with leave-one-scene-out: choose on two scenes, measure on the third. Needs saved keypoints (no GPU).
 
 Usage: python scripts/tune_global.py --keypoints experiments/keypoints/keypoints_val.jsonl [--out experiments/tune_global]
-Rule (plan): among combinations with coverage >= 95% (drone 08 excluded from the choice), the lowest flip rate.
+Grid extended to reject_cost 48 after the final review. Rule (plan): among combinations with coverage >= 95% (drone 08 excluded from the choice), the lowest flip rate.
 """
 import argparse
 import csv
@@ -17,7 +17,7 @@ from dronepose.pose.global_disambiguation import GlobalParams
 from dronepose.pose.replay import check_no_test, load_keypoints, replay
 from dronepose.pose.tuning import add_counts, counts_from_results, scene_of, select_best
 
-REJECT_COSTS = (3.0, 6.0, 12.0)
+REJECT_COSTS = (3.0, 6.0, 12.0, 24.0, 48.0)
 Z_CAPS = (4.0, 6.0, 8.0, 12.0)
 
 ap = argparse.ArgumentParser()
