@@ -418,6 +418,16 @@ Oracolo (migliore delle due soluzioni) 6.81%. Per sequenza (`per_sequence.csv`):
 
 **Da fare dopo:** revisione finale del piano; cartella locale `PerTesi/` (vedi §6sexies); piano per il drone 08 (correzione di identità col tracking); valutare la gravità e la versione causale; test finale una sola volta alla fine.
 
+## 6octies. Drone 08 (Tello): sonda sul problema di identità (2026-10-16)
+
+Sonda locale (usa-e-getta, non nel repo; val, keypoint YOLO setting A, strategia `global`, 1800 frame del 08 contro il 01 di controllo). Il drone 08 ha il modello quasi quadrato (0.047 × 0.05) e piccolo (~156 px di estensione contro 240–390 degli altri).
+- **Identità dei keypoint** (la permutazione migliore dei 4 punti è l'identità): 08 = 100% con il muso verso la camera (angolo < 30°), 63% tra 30° e 60°, **0% da 60° in poi**; gli altri droni ≥ 97.6% a qualunque angolo. Errore sistematico, costante nella sequenza (il campo `degree` imposta lo yaw di partenza 0/90/180/270): né il tracking né `global` possono correggerlo.
+- **Il moto non dice dov'è il davanti:** angolo tra asse frontale e velocità, mediana 56° sul 08 (entro 45°: 45% dei frame); 95° nelle sequenze a `degree` 90. Il drone non vola di muso.
+- **Con `global` sul 08:** flip 38.9%, ma **a meno della simmetria D4 del quadrato** (4 imbardate a multipli di 90° e i 4 ribaltamenti di 180°) **0.0% di flip**, rotazione mediana 7.8° (60% entro 15°); asse "su" mediana 3.8° (97.8% entro 30°); errore relativo di profondità mediano 3.65% (p90 11.1%) contro 2.08% del 01; pose 92%.
+- **La gravità (`--up`) non cambia nulla** sul 08: la confusione è di imbardata, non di drone capovolto.
+
+**Conclusione:** per il 08 la posizione e la verticale sono utilizzabili; solo l'imbardata è ambigua a multipli di 90°. Il segnale per risolverla (la piccola camera frontale) è visibile solo nell'immagine, quindi serve un modello migliore, non una regola geometrica o temporale. **Implicazioni:** (i) in valutazione e in tesi riportare per i droni quasi simmetrici l'errore di rotazione **a meno della simmetria**, accanto a quello grezzo; (ii) in Fase 3, per il 08 usare ingressi indipendenti dall'imbardata (asse "su", roll/pitch, posizione e velocità) o l'imbardata ridotta modulo 90°; (iii) un riaddestramento mirato (risoluzione, peso sul 08, cue dedicato al davanti) è un esperimento della Fase 1, di esito incerto e da pianificare a parte.
+
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
 - **Precisazione 2026-10-08 (chiarita con l'utente):** il PnP a runtime **non scopre** la dimensione del drone: riceve il modello 3D (distanze tra rotori) come input fisso e ne ricava `t`. Un drone in scala 1:2 a metà distanza dà gli stessi pixel → la distanza assoluta richiede **classe nota + dimensioni vere**; classe ignota = solo direzione e forma della traiettoria. In **fase 2 sul sintetico** si usa il modello ricavato dal dataset (`flu_model.py`): `t` esce già nelle unità della GT, nessun errore di scala. L'errore "34 vs 28 cm" (PnP compensa con la distanza, fattore 28/34) nasce solo se il modello PnP ha scala diversa da quella di rendering: sintetico con specifiche DJI al posto del modello dati (**da non fare**) oppure reale con specifiche sbagliate. La conversione in metri è solo una moltiplicazione per classe, applicata quando servono metri veri (fase 3, reale).
