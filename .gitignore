@@ -72,3 +72,6 @@ kaggle.json
 *.swp
 *~
 Thumbs.db
+
+# copia ordinata per fasi dei file, per scrivere la tesi (locale, non versionata)
+/PerTesi/
