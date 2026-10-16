@@ -7,7 +7,8 @@ import numpy as np
 
 from dronepose.data.drone_models import DroneModel
 from dronepose.data.sixdronesyn import FPS
-from dronepose.eval.metrics import ade, fde, rotation_error_deg, translation_error
+from dronepose.eval.metrics import (SYMMETRIC_DRONES, ade, fde, rotation_error_deg, symmetric_rotation_error_deg,
+                                    translation_error)
 from dronepose.keypoints.predictors import KeypointPredictor
 from dronepose.pose.disambiguation import Choice, disambiguate
 from dronepose.pose.pnp import PnPSolution, solve_ippe
@@ -35,7 +36,7 @@ def assemble_results(records: list[dict], kpts: list[np.ndarray], candidates: li
     for r, kp, sols, ch in zip(records, kpts, candidates, choices):
         R_gt = np.array(r["R_gt"])
         out = {"frame_id": r["frame_id"], "frame_idx": r["frame_idx"], "kpts_pred": np.asarray(kp).tolist(),
-               "R": None, "t": None, "rot_err_deg": None, "t_err": None,
+               "R": None, "t": None, "rot_err_deg": None, "rot_err_sym_deg": None, "t_err": None,
                "future_pred": None, "future_gt": None, "ade": None, "fde": None,
                "solution_index": ch.index, "rejected": ch.rejected, "reject_reason": ch.reason,
                "reproj_ratio": None if math.isinf(ch.ratio) else ch.ratio,
@@ -44,7 +45,9 @@ def assemble_results(records: list[dict], kpts: list[np.ndarray], candidates: li
             results.append(out)
             continue
         sol = ch.solution
-        out.update(R=sol.R.tolist(), t=sol.t.tolist(), rot_err_deg=rotation_error_deg(sol.R, R_gt),
+        rot_err = rotation_error_deg(sol.R, R_gt)
+        out.update(R=sol.R.tolist(), t=sol.t.tolist(), rot_err_deg=rot_err,
+                   rot_err_sym_deg=symmetric_rotation_error_deg(sol.R, R_gt) if r["drone"] in SYMMETRIC_DRONES else rot_err,
                    t_err=translation_error(sol.t, np.array(r["t_gt"])))
         history.append((r["frame_idx"] / FPS, sol.t))
         future_idx = [r["frame_idx"] + k for k in range(1, horizon + 1)]
@@ -81,6 +84,9 @@ def summarize(results: list[dict]) -> dict:
         "p90_rot_err_deg": float(np.percentile([r["rot_err_deg"] for r in posed], 90)) if posed else None,
         "median_t_err": med([r["t_err"] for r in posed]),
         "flip_rate": float(np.mean([r["rot_err_deg"] > 90 for r in posed])) if posed else None,
+        "median_rot_err_sym_deg": med([r.get("rot_err_sym_deg", r["rot_err_deg"]) for r in posed]),
+        "p90_rot_err_sym_deg": float(np.percentile([r.get("rot_err_sym_deg", r["rot_err_deg"]) for r in posed], 90)) if posed else None,
+        "flip_rate_sym": float(np.mean([r.get("rot_err_sym_deg", r["rot_err_deg"]) > 90 for r in posed])) if posed else None,
         "oracle_flip_rate": float(np.mean([r["oracle_rot_err_deg"] > 90 for r in with_cands])) if with_cands else None,
         "median_ade": med([r["ade"] for r in fc]), "median_fde": med([r["fde"] for r in fc]),
     }

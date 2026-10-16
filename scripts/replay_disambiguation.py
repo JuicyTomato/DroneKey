@@ -59,7 +59,7 @@ for strategy in STRATEGIES:
                  "n_missing_kpts": table["n_missing_kpts"]})
     (out / f"table_{strategy}.json").write_text(json.dumps(table, indent=2))
     print(f"{strategy:16s} flip {100 * a['flip_rate']:5.2f}%  copertura {100 * a['coverage']:5.1f}%  "
-          f"oracolo {100 * a['oracle_flip_rate']:5.2f}%  rot mediana {a['median_rot_err_deg']:.2f}°  "
+          f"oracolo {100 * a['oracle_flip_rate']:5.2f}%  flip a meno della simmetria {100 * a['flip_rate_sym']:5.2f}%  rot mediana {a['median_rot_err_deg']:.2f}°  "
           f"p90 {a['p90_rot_err_deg']:.2f}°  | senza drone 08: flip {100 * no08['flip_rate']:5.2f}%  "
           f"copertura {100 * no08['coverage']:5.1f}%")
 with open(out / "per_sequence.csv", "w", newline="") as f:

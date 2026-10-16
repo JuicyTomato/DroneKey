@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from scipy.spatial.transform import Rotation
 
 from dronepose.data.canonical import to_canonical
@@ -87,6 +88,8 @@ def test_run_sequence_rejects_records_from_several_sequences(tmp_path):
 
 import json
 
+import pytest
+
 from dronepose.pose.disambiguation import TemporalParams
 
 
@@ -147,3 +150,26 @@ def test_global_strategy_gravity_gate_reaches_the_pipeline(tmp_path):
     res = run_sequence(recs, _blank, GTPredictor(sigma_px=6.0, seed=1), models, strategy="global", up=up)
     tilts = [np.degrees(np.arccos(np.clip(np.array(r["R"])[:, 2] @ up, -1, 1))) for r in res if r["R"] is not None]
     assert tilts and max(tilts) <= 70.0
+
+
+def test_symmetric_rotation_error_field_equals_plain_error_for_non_symmetric_drones(tmp_path):
+    recs, models = _linear_sequence(tmp_path)                      # drone 01: not symmetric
+    res = run_sequence(recs, _blank, GTPredictor(sigma_px=3.0, seed=2), models)
+    assert all(r["rot_err_sym_deg"] == r["rot_err_deg"] for r in res)
+    s = summarize(res)
+    assert s["median_rot_err_sym_deg"] == s["median_rot_err_deg"] and s["flip_rate_sym"] == s["flip_rate"]
+
+
+def test_symmetric_rotation_error_field_ignores_quarter_turns_for_drone_08(tmp_path):
+    from dronepose.common.geometry import rot_z
+    from dronepose.pipeline.skeleton import assemble_results
+    from dronepose.pose.disambiguation import Choice
+    from dronepose.pose.pnp import PnPSolution
+
+    recs, _ = _linear_sequence(tmp_path)
+    rec = dict(recs[0], drone="08")
+    wrong = PnPSolution(np.array(rec["R_gt"]) @ rot_z(90), np.array(rec["t_gt"]), 1.0)   # yaw off by a quarter turn
+    kp = np.zeros((4, 3))
+    out = assemble_results([rec], [kp], [[wrong]], [Choice(0, wrong, 1.0, False, None)])[0]
+    assert out["rot_err_deg"] == pytest.approx(90, abs=1e-3) and out["rot_err_sym_deg"] == pytest.approx(0, abs=1e-3)
+    assert summarize([out])["median_rot_err_sym_deg"] == pytest.approx(0, abs=1e-3)
