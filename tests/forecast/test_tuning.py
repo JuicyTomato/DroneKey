@@ -11,7 +11,8 @@ from dronepose.forecast.tuning import check_split, predict_all, tune
 from dronepose.forecast.windows import make_windows
 
 CFG = dataclasses.replace(load_config(), kf_cv_q_grid=(1e-6, 1e-3, 1.0), kf_ca_q_grid=(1e-4, 1.0, 1e3),
-                          kf_r_grid=(1e-6, 1e-3))
+                          kf_r_grid=(1e-6, 1e-3), ctr_k_grid=(3, 5), acro_k_grid=(3,), acro_lam_grid=(0.0, 8.0),
+                          acro_thrust=("constant", "hold_vz"), acro_kd=("estimate",))
 
 
 def _traj(T=80, drone="01", s_c=1.0, chaos=False, seed=0, scene="03", circle=False):
@@ -61,7 +62,7 @@ def test_tuning_ignores_non_metric_windows():
 def test_predict_all_keys_and_shapes():
     w = _windows([_traj()])
     preds = predict_all(w, tune(w, CFG), CFG)
-    pos = ("const", "cv15", "cv", "ca", "kf_cv", "kf_ca", "physics")
+    pos = ("const", "cv15", "cv", "ca", "kf_cv", "kf_ca", "physics", "ctrv", "ctra", "physics_acro", "physics_acro_gen")
     assert set(preds) == set(pos) | {"rot_hold", "rot_const_omega"}
     for k in pos:
         assert preds[k].shape == (len(w), CFG.pred_len, 3)

@@ -17,5 +17,10 @@
   "g": 9.81,
   "max_tilt_deg": 60,
   "bootstrap_b": 10000,
-  "bootstrap_seed": 0
+  "bootstrap_seed": 0,
+  "ctr_k_grid": [3, 5, 10],
+  "acro_k_grid": [3, 5, 10],
+  "acro_lam_grid": [0, 2, 5, 8, 12],
+  "acro_thrust": ["constant", "hold_vz"],
+  "acro_kd": ["estimate", 0.0, 0.7]
 }

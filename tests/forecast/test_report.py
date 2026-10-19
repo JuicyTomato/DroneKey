@@ -12,7 +12,8 @@ from dronepose.forecast.tuning import POSITION_METHODS, predict_all
 from dronepose.forecast.windows import make_windows
 
 CFG = load_config()
-PARAMS = {"cv_k": 2, "ca_k": 3, "kf_cv": {"q": 100.0, "r": 1e-6}, "kf_ca": {"q": 1000.0, "r": 1e-6}}
+PARAMS = {"cv_k": 2, "ca_k": 3, "kf_cv": {"q": 100.0, "r": 1e-6}, "kf_ca": {"q": 1000.0, "r": 1e-6}, "ctr_k": 3,
+          "acro_k": 3, "acro_kd": "estimate", "acro_gen": {"lam": 5.0, "thrust": "hold_vz", "k": 3, "kd": "estimate"}}
 B = 200
 
 

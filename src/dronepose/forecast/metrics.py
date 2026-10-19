@@ -32,15 +32,11 @@ def skill(err_method: np.ndarray, err_ref: np.ndarray) -> float:
     return float(1 - np.sum(err_method) / np.sum(err_ref))
 
 
-def paired_bootstrap_skill(err_method, err_ref, traj, strata, b: int, seed: int) -> tuple[float, float, float]:
-    """Skill with a 95% percentile interval; trajectories resampled with replacement within each stratum (scene).
+def bootstrap_counts(traj, strata, b: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    """Trajectory index per window and the (b, n_traj) resampling counts, within each stratum, with replacement.
 
-    Both methods are evaluated on the same resampled trajectories (paired).
-    """
-    err_method, err_ref = np.asarray(err_method, float), np.asarray(err_ref, float)
+    One draw serves every method compared on the same windows (paired)."""
     ids, inv = np.unique(np.asarray(traj), return_inverse=True)
-    S_m = np.bincount(inv, weights=err_method, minlength=len(ids))
-    S_r = np.bincount(inv, weights=err_ref, minlength=len(ids))
     traj_stratum = np.empty(len(ids), dtype=object)
     traj_stratum[inv] = np.asarray(strata)
     rng = np.random.default_rng(seed)
@@ -50,9 +46,27 @@ def paired_bootstrap_skill(err_method, err_ref, traj, strata, b: int, seed: int)
         members = np.flatnonzero(traj_stratum == s)
         draws = members[rng.integers(0, len(members), size=(b, len(members)))]
         np.add.at(counts, (np.broadcast_to(rows, draws.shape), draws), 1)
+    return inv, counts
+
+
+def skill_ci(err_method, err_ref, inv: np.ndarray, counts: np.ndarray) -> tuple[float, float, float]:
+    """Skill and 95% percentile interval from resampling counts (see bootstrap_counts)."""
+    err_method, err_ref = np.asarray(err_method, float), np.asarray(err_ref, float)
+    n = counts.shape[1]
+    S_m = np.bincount(inv, weights=err_method, minlength=n)
+    S_r = np.bincount(inv, weights=err_ref, minlength=n)
     boot = 1 - (counts @ S_m) / (counts @ S_r)
     lo, hi = np.percentile(boot, [2.5, 97.5])
     return skill(err_method, err_ref), float(lo), float(hi)
+
+
+def paired_bootstrap_skill(err_method, err_ref, traj, strata, b: int, seed: int) -> tuple[float, float, float]:
+    """Skill with a 95% percentile interval; trajectories resampled with replacement within each stratum (scene).
+
+    Both methods are evaluated on the same resampled trajectories (paired).
+    """
+    inv, counts = bootstrap_counts(traj, strata, b, seed)
+    return skill_ci(err_method, err_ref, inv, counts)
 
 
 def metric_group(windows) -> np.ndarray:
