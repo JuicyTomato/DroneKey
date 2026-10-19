@@ -24,6 +24,8 @@ class Trajectory:
     times: np.ndarray               # (T,) seconds, first frame at 0
     p_G: np.ndarray                 # (T,3) dataset units, gravity frame
     R_G: np.ndarray = field(repr=False)  # (T,3,3) body FLU -> G
+    freeze_idx: int | None = None        # generated sets: last observed frame before the frozen sticks
+    meta: dict = field(default_factory=dict)  # generated sets: JSON-serialisable per-sample metadata
 
     @property
     def u(self) -> np.ndarray:
@@ -39,7 +41,8 @@ class Trajectory:
 
     @property
     def key(self) -> str:
-        return f"{self.scene}_{self.drone}"
+        # generated samples share scene and class: their id keeps the key unique
+        return f"{self.scene}_{self.drone}" + (f"_{self.meta['sample_id']}" if "sample_id" in self.meta else "")
 
 
 def _sequence_arrays(recs: list[dict], name: str) -> tuple[np.ndarray, np.ndarray]:
@@ -80,7 +83,7 @@ def save_trajectories(trajs: list[Trajectory], out_dir: Path, split: str) -> Non
         arrays[f"{tr.key}/times"], arrays[f"{tr.key}/p_G"], arrays[f"{tr.key}/R_G"] = tr.times, tr.p_G, tr.R_G
         index.append({"key": tr.key, "scene": tr.scene, "drone": tr.drone, "split": tr.split,
                       "motion_type": tr.motion_type, "copies": [list(c) for c in tr.copies], "s_c": tr.s_c,
-                      "length": len(tr.times)})
+                      "length": len(tr.times), "freeze_idx": tr.freeze_idx, "meta": tr.meta})
     np.savez_compressed(out_dir / f"trajectories_{split}.npz", **arrays)
     (out_dir / f"index_{split}.json").write_text(json.dumps(index, indent=1))
 
@@ -91,5 +94,6 @@ def load_trajectories(out_dir: Path, split: str) -> list[Trajectory]:
     with np.load(out_dir / f"trajectories_{split}.npz") as z:
         return [Trajectory(scene=e["scene"], drone=e["drone"], split=e["split"], motion_type=e["motion_type"],
                            copies=[(c[0], int(c[1])) for c in e["copies"]], s_c=e["s_c"],
-                           times=z[f"{e['key']}/times"], p_G=z[f"{e['key']}/p_G"], R_G=z[f"{e['key']}/R_G"])
+                           times=z[f"{e['key']}/times"], p_G=z[f"{e['key']}/p_G"], R_G=z[f"{e['key']}/R_G"],
+                           freeze_idx=e.get("freeze_idx"), meta=e.get("meta", {}))
                 for e in index]
