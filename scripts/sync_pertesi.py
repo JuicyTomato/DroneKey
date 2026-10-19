@@ -73,6 +73,21 @@ PLAN = {
         "documenti": ["docs/superpowers/specs/2026-10-16-fase3-dataset-baseline-design.md",
                       "docs/superpowers/plans/2026-10-16-fase3-dataset-baseline.md"],
     },
+    "9_Fase3_generatore": {
+        "codice": [f"{S}/forecast", "configs/generator.json", "configs/forecast.json"],
+        "script": ["scripts/forecast"],
+        "test": ["tests/forecast"],
+        "risultati": [f"experiments/forecast/generator/{d}" for d in ("val_L0", "val_L1", "val_L2", "active_L1")]
+                     + [f"experiments/forecast/generator/{f}" for f in ("tuning.json", "mismatch.json", "mismatch.png",
+                                                                        "noise.json", "noise.png", "realism.json",
+                                                                        "realism.png", "sha256_val.txt")]
+                     + [f"data/processed/forecast_gen/{f}" for f in ("edges.json", "strat_report_train.json",
+                                                                     "strat_report_val.json", "strat_report_test.json",
+                                                                     "strat_report_active.json")],
+        "video_e_fotogrammi": ["experiments/forecast/generator/videos"],
+        "documenti": ["docs/superpowers/specs/2026-10-16-fase3-generatore-design.md",
+                      "docs/superpowers/plans/2026-10-16-fase3-generatore.md"],
+    },
 }
 
 
