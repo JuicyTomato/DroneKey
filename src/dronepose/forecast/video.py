@@ -51,14 +51,13 @@ class TopDownView:
         xy = (np.asarray(P, float)[:, :2] - self.center) * self.scale
         return np.stack([self.size / 2 + xy[:, 0], self.size / 2 - xy[:, 1]], axis=1)
 
-    def blank(self, units: str) -> np.ndarray:
+    def blank(self, units: str, title: str = "vista dall'alto: x destra, y avanti (dalla camera)") -> np.ndarray:
         panel = np.full((self.size, self.size, 3), 24, np.uint8)
         bar = nice_length((self.size - 2 * self.margin) / self.scale / 3)
         x0, y0 = self.margin, self.size - self.margin // 2
         cv2.line(panel, (x0, y0), (int(x0 + bar * self.scale), y0), (200, 200, 200), 2)
         cv2.putText(panel, f"{bar:g} {units}", (x0, y0 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
-        cv2.putText(panel, "vista dall'alto: x destra, y avanti (dalla camera)", (10, 22), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (200, 200, 200), 1, cv2.LINE_AA)
+        cv2.putText(panel, title, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
         return panel
 
     def draw(self, panel: np.ndarray, P: np.ndarray, color, thickness: int = 2) -> None:
