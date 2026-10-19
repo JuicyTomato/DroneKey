@@ -166,3 +166,16 @@ def test_generate_parallel_matches_serial():
     b = generate(6, seed=13, level=1, cfg=cfg, workers=2)                 # two processes, chunks of 4
     assert [t.meta for t in a.trajs[:6]] == [t.meta for t in b.trajs]
     np.testing.assert_array_equal(a.trajs[5].p_G, b.trajs[-1].p_G)
+
+
+def test_falling_acro_flip_is_kept():
+    # spec §5.2: a flip in the future is never rejected; a flipping acro drone also falls, so the fall check must not
+    # reject it either (here even a 0 m fall would count)
+    from dronepose.forecast.generator import simulate_candidates
+    cfg = copy.deepcopy(FAST)
+    cfg["generator"]["max_fall_m"] = 0.0
+    over = {"mode": "acro", "s": 1.0, "seg_abrupt": "step_max", "seg_dur": 0.4}
+    r = simulate_candidates(np.arange(16), 7, 1, cfg, setup_overrides=over)
+    flip = np.array([t.meta["flip"] for t in r["trajs"]])
+    assert flip.any() and (r["reason"] == "fall").any()                       # the check is active on non-flips
+    assert not (r["reason"][flip] == "fall").any()

@@ -267,9 +267,15 @@ class Pilot:
             self._started = True
         elif dt > 0:
             self.x[step_now], self.xd[step_now] = u[step_now], 0.0
-            acc = wn[:, None] ** 2 * (u - self.x) - 2 * (self.zeta * wn)[:, None] * self.xd
-            self.xd = self.xd + acc * dt                     # semi-implicit Euler at the integration rate
-            self.x = self.x + self.xd * dt
+            # exact solution over the pilot period with the target held (zeta <= 1): an explicit integrator at
+            # 120 Hz rings (60 Hz alternation) once zeta * wn * dt > 0.5, as in the high_gain events
+            sig = (self.zeta * wn)[:, None]
+            wd = (wn * np.sqrt(1 - self.zeta ** 2))[:, None]
+            cos, sin_wd = np.cos(wd * dt), dt * np.sinc(wd * dt / np.pi)     # sin(wd dt) / wd, = dt when wd = 0
+            decay = np.exp(-sig * dt)
+            e, ed = self.x - u, self.xd
+            self.x = u + decay * (e * (cos + sig * sin_wd) + ed * sin_wd)
+            self.xd = decay * (ed * (cos - sig * sin_wd) - wn[:, None] ** 2 * e * sin_wd)
         v_f, yaw_f = self.x[:, :3], self.x[:, 3]
         nz = self._noise(t)
         psi = heading_of(state.R)

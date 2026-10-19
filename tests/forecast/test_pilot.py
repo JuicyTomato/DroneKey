@@ -170,3 +170,37 @@ def test_repeated_call_at_same_time_keeps_filter_state():
         b.sticks(i / 600, s)
         xb = b.sticks(i / 600, s)["v_xy"].copy()      # second call at the same instant: no time passes
     np.testing.assert_array_equal(xa, xb)
+
+
+def test_hand_filter_does_not_ring_at_high_gain():
+    # high_gain hand (5 Hz x 3) with no overshoot (critical damping): the pilot updates at 120 Hz must approach the
+    # target monotonically, without the 60 Hz alternation of an explicit integrator at large wn * dt
+    B = 2
+    st = quiet_setup(B, mode="pmode", yaw_policy="fixed", seg_maneuver="hover", seg_dur=0.5, hand_band_hz=5.0,
+                     overshoot=0.0)
+    st.seg_abrupt[:, 1] = "high_gain"
+    st.seg_dur[:, 1] = 2.0                                                     # the event lasts past the series
+    st.seg_u[:, 1, 0] = 0.8
+    pilot = Pilot(st, CFG, np.full(B, 0.6))
+    x = sticks_series(pilot, B, 1.5, dt=1 / 120)                               # (T,B,2) at the update instants
+    d = np.diff(x[int(0.75 * 120):], axis=0)                                   # after the event starts (0.7 s)
+    d = np.where(np.abs(d) < 1e-9, 0.0, d)
+    flips = (np.sign(d[1:]) * np.sign(d[:-1]) < 0).sum(0)
+    assert np.abs(x[-1]).max() > 0.5                                           # the sticks did move
+    assert flips.max() == 0
+
+
+def test_toward_motion_policy_share():
+    # spec §5.6: the "nose in the direction of motion" share is about 20% (the yaw policy drawn per sample)
+    st = sample_setup(20000, np.random.default_rng(5), CFG)
+    assert abs((st.yaw_policy == "toward_motion").mean() - 0.20) < 0.015
+
+
+def test_hand_overshoot_matches_the_drawn_one():
+    B = 1
+    st = quiet_setup(B, mode="pmode", yaw_policy="fixed", seg_maneuver="hover", seg_dur=0.5, overshoot=0.2)
+    st.seg_maneuver[:, 1] = "cruise"
+    st.seg_dur[:, 1] = 3.0
+    st.seg_u[:, 1, 0] = 0.8
+    n = np.linalg.norm(sticks_series(Pilot(st, CFG, np.full(B, 0.6)), B, 2.5, dt=1 / 120)[:, 0], axis=-1)
+    assert abs(n.max() / n[-1] - 1 - 0.2) < 0.005

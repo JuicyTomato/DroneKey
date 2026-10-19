@@ -8,7 +8,8 @@ Every candidate has an id; its randomness comes from the block of BLOCK candidat
 default_rng([seed, block]) before any simulation and independently of the mismatch level. Hence the same id gives
 the same pilot, drone and intentions at every level, and a subset of ids can be regenerated alone.
 Implausible candidates (past tilt beyond the style limit + margin, thrust command outside the range, a fall in the
-future) are rejected and counted; acro flips in the future are kept and marked.
+future below the freeze altitude) are rejected and counted; acro flips in the future are kept and marked, even when
+they fall.
 """
 import itertools
 from collections import deque
@@ -158,8 +159,10 @@ def _simulate(draw: dict, level: int, cfg: dict, freeze: bool, record_hf: bool, 
     lo, hi = gc["c_cmd_range_g"]
     thrust_bad = (c_lo < lo * G - 1e-9) | (c_hi > hi * G + 1e-9)
     z = out["p"][..., 2]
-    fall_bad = (z[:, FI:] - z[:, FI:FI + 1]).min(1) < -gc["max_fall_m"]
     flip = _tilt(out["R"][:, FI + 1:]).max(1) > np.pi / 2
+    # fall below the altitude at the freeze (the spec's "quota iniziale" read as the start of the future: the
+    # warm-up altitude would reject descents flown in the past); a flip also falls and is kept (spec §5.2)
+    fall_bad = ((z[:, FI:] - z[:, FI:FI + 1]).min(1) < -gc["max_fall_m"]) & ~flip
     res = {"out": out, "qp": qp, "setup": st, "warm": warm, "at_f": at_f, "flip": flip,
            "bad": {"tilt": tilt_bad, "thrust": thrust_bad, "fall": fall_bad}}
     if hf is not None:
