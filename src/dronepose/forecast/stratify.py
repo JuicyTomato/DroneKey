@@ -13,6 +13,8 @@ import numpy as np
 from dronepose.forecast.generator import REASONS, GeneratedBatch, iter_chunks, simulate_candidates
 
 STRAT_VARS = ("omega_vert", "omega_horiz", "accel_norm", "speed", "t_since_change")
+OMEGA_GROUPS = ("|ω_vert|", "|ω_oriz|")        # the first two cell variables, named as in the report
+LEVEL_NAMES = ("basso", "medio", "alto")
 
 
 def _values(meta: dict) -> np.ndarray:
@@ -25,9 +27,14 @@ def cell_edges(meta_aux: list[dict]) -> dict[str, tuple[float, float]]:
     return {v: (float(q[0, i]), float(q[1, i])) for i, v in enumerate(STRAT_VARS)}
 
 
+def _level(x: float, edges: tuple[float, float]) -> int:
+    lv = int(np.searchsorted(edges, x, side="right"))
+    return 1 if edges[0] == edges[1] == x else lv       # tied edges (a point mass): the tied value is the middle level
+
+
 def cell_of(meta: dict, edges: dict) -> tuple[int, ...]:
     x = _values(meta)
-    return tuple(int(np.searchsorted(edges[v], x[i], side="right")) for i, v in enumerate(STRAT_VARS))
+    return tuple(_level(x[i], edges[v]) for i, v in enumerate(STRAT_VARS))
 
 
 def cell_key(cell) -> str:
@@ -97,17 +104,24 @@ def stratified_generate(n: int, seed: int, level: int, cfg: dict, edges: dict, p
     attempts = 0
     n_rej = {r: 0 for r in REASONS}
     rejected_by: dict[str, dict] = {}
+    by_omega = {f"{name} {lv}": {"candidates": 0, "rejected": {}} for name in OMEGA_GROUPS for lv in LEVEL_NAMES}
     chunks = iter_chunks(sim_fn, seed, level, cfg, freeze, workers=workers, **sim_kw)
     while not sel.full() and attempts < max_attempts:
         ids, r = next(chunks)
         attempts += len(ids)
         for i, t in enumerate(r["trajs"]):
+            cell = cell_of(t.meta, edges)
+            groups = [by_omega[f"{name} {LEVEL_NAMES[cell[j]]}"] for j, name in enumerate(OMEGA_GROUPS)]
+            for g in groups:
+                g["candidates"] += 1
             if r["reject"][i]:
                 n_rej[r["reason"][i]] += 1
                 key = f"{r['reason'][i]}/{t.meta['mode']}/{t.meta['style']}"
                 rejected_by.setdefault(key, {"count": 0})["count"] += 1
+                for g in groups:
+                    g["rejected"][r["reason"][i]] = g["rejected"].get(r["reason"][i], 0) + 1
             else:
-                sel.offer(cell_of(t.meta, edges), t)
+                sel.offer(cell, t)
     chunks.close()
     topped = sel.top_up() if not sel.full() else 0
     pairs = sorted(sel.accepted, key=lambda ct: ct[1].meta["sample_id"])
@@ -126,6 +140,6 @@ def stratified_generate(n: int, seed: int, level: int, cfg: dict, edges: dict, p
               "topped_up": topped, "per_level": per_level, "min_per_group": min_per_group,
               "quota_ok": all(min(x) >= min_per_group for x in per_level.values()),
               "zero_natural_cells": sorted(cell_key(c) for c in set(cells) if probs.get(c, 0) <= 0),
-              "n_rejected": n_rej, "rejected_by": rejected_by}
+              "n_rejected": n_rej, "rejected_by": rejected_by, "by_omega": by_omega}
     return GeneratedBatch(trajs=trajs, internals={}, n_rejected=n_rej, rejected_by=rejected_by,
                           n_candidates=attempts), report

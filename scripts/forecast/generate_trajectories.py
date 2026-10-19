@@ -85,6 +85,8 @@ def main() -> None:
                   f"rabbocco {report['topped_up']}; quota per livello ok: {report['quota_ok']} "
                   f"(min {min(min(x) for x in report['per_level'].values())}); flip {report['flip']}")
             rejection_summary(report["rejected_by"], report["attempts"])
+            print("  quota di scarto per gruppo di ω: " + ", ".join(
+                f"{g} {sum(v['rejected'].values()) / max(v['candidates'], 1):.1%}" for g, v in report["by_omega"].items()))
     else:
         for name in args.sets:
             t0 = time.time()

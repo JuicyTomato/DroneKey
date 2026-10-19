@@ -79,3 +79,10 @@ def test_generated_samples_get_unique_keys(tmp_path):
     back = load_trajectories(tmp_path, "val")
     assert len({t.key for t in back}) == 3
     np.testing.assert_allclose([t.p_G[0, 0] for t in back], [0.0, 1.0, 2.0])
+
+
+def test_mixing_weighted_and_unweighted_trajectories_is_an_error():
+    a = tr(meta={"mode": "acro", "weight": 2.0})
+    b = tr(meta={"mode": "angle"})
+    with pytest.raises(ValueError, match="weight"):
+        freeze_windows([a, b], 15, 30, 30)

@@ -60,6 +60,9 @@ def _cut(trajs: list[Trajectory], starts: list[np.ndarray], N: int, H: int, fps:
     U = R[..., :, 2]
     traj = traj.astype(int)
     shared = set.intersection(*(set(t.meta) for t in trajs)) if trajs else set()
+    if "weight" not in shared and any("weight" in t.meta for t in trajs):
+        raise ValueError("some trajectories carry an importance 'weight' and others do not (stratified and "
+                         "unstratified sets mixed): the weights would be dropped silently")
     columns = {k: np.array([trajs[j].meta[k] for j in traj]) for k in sorted(shared)} if len(traj) else {}
     return Windows(obs_t=(np.arange(N) - (N - 1)) / fps, fut_t=np.arange(1, H + 1) / fps,
                    obs_p=rel[:, :N], fut_p=rel[:, N:], obs_R=R[:, :N], fut_R=R[:, N:], obs_u=U[:, :N], fut_u=U[:, N:],

@@ -106,3 +106,27 @@ def test_parallel_matches_serial():
     b, rb = stratified_generate(400, 3, 1, CFG, edges, probs, 10, 4000, sim_fn=FakeSim(), workers=2)
     assert [t.meta for t in a.trajs] == [t.meta for t in b.trajs]
     assert ra["attempts"] == rb["attempts"]
+
+
+def test_cell_of_tied_edges_puts_the_tie_in_the_middle():
+    # a variable with a point mass (e.g. many exact zeros) can give two equal tercile edges: the tied value is
+    # neither "low" nor "high"
+    edges = {v: (1.0, 2.0) for v in STRAT_VARS}
+    edges["speed"] = (0.0, 0.0)
+    meta = {"omega_vert": 1.5, "omega_horiz": 1.5, "accel_norm": 1.5, "speed": 0.0, "t_since_change": 1.5}
+    assert cell_of(meta, edges) == (1, 1, 1, 1, 1)
+    assert cell_of(dict(meta, speed=0.3), edges)[3] == 2
+    assert cell_of(dict(meta, speed=2.0), {**edges, "speed": (1.0, 2.0)})[3] == 2    # untied edges: as before
+
+
+def test_rejections_by_omega_group():
+    aux = synthetic_meta(5000, 2)
+    edges = cell_edges(aux)
+    probs = natural_cell_probs(aux, edges)
+    _, report = stratified_generate(300, 7, 1, CFG, edges, probs, 30, 20000, sim_fn=FakeSim())
+    by = report["by_omega"]
+    assert set(by) == {f"{v} {lv}" for v in ("|ω_vert|", "|ω_oriz|") for lv in ("basso", "medio", "alto")}
+    for v in ("|ω_vert|", "|ω_oriz|"):
+        groups = [by[f"{v} {lv}"] for lv in ("basso", "medio", "alto")]
+        assert sum(g["candidates"] for g in groups) == report["attempts"]
+        assert sum(g["rejected"].get("tilt", 0) for g in groups) == report["n_rejected"]["tilt"]

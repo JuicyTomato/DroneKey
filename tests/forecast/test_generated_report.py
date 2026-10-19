@@ -157,3 +157,25 @@ def test_c2_is_one_sided(gen1):
     s = summarize_generated(gen1, preds, CFG, np.ones(len(gen1)), "ctra", bootstrap_b=B)
     if s["criteria"]["C2"]["value"] == s["criteria"]["C2"]["value"]:  # regime group present
         assert s["criteria"]["C2"]["pass"] is True
+
+
+def test_c3_gap_ci_in_metres(gen1):
+    # the C3 interval must be on the reported gap (metres), not on the skill fraction
+    from dronepose.forecast.tuning import MODE_METHOD
+    preds = predict_all(gen1, PARAMS, CFG)
+    preds[MODE_METHOD] = gen1.fut_p.copy()
+    preds["physics_acro_gen"] = gen1.fut_p + np.array([0.5, 0.0, 0.0])       # 0.5 m worse on every window
+    s = summarize_generated(gen1, preds, CFG, gen1.meta["weight"], "ctra", bootstrap_b=B)
+    c3 = s["criteria"]["C3"]
+    np.testing.assert_allclose([c3["value"], *c3["ci"]], 0.5, atol=1e-9)
+    assert c3["skill"] == pytest.approx(1.0)
+
+
+def test_group_with_only_zero_weights(gen1):
+    wt = np.asarray(gen1.meta["weight"], float).copy()
+    modes = np.asarray(gen1.meta["mode"])
+    wt[modes == modes[0]] = 0.0                                              # the natural distribution never has it
+    with np.errstate(invalid="ignore", divide="ignore"):
+        s = summarize_generated(gen1, predict_all(gen1, PARAMS, CFG), CFG, wt, "ctra", bootstrap_b=B)
+    g = {g["group"]: g for g in s["versions"]["weighted"]["groups"]}[f"modo {modes[0]}"]
+    assert g["weight_sum"] == 0 and np.isnan(g["position"]["cv"]["ade_mean"]).all()

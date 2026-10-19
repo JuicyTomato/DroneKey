@@ -154,6 +154,11 @@ def _generated_groups(w: Windows) -> list[tuple[str, np.ndarray]]:
     return [g for g in out if g[1].any()]
 
 
+def _wmean(x: np.ndarray, wt: np.ndarray) -> float:
+    """Weighted mean; NaN for a group the natural distribution never produces (all weights zero)."""
+    return float(np.average(x, weights=wt)) if wt.sum() > 0 else float("nan")
+
+
 def _oracle_c4(w: Windows) -> dict:
     """C4: on level-0 acro samples the true dynamics from the true freeze state reproduces the future (< 1e-4 m)."""
     from dronepose.forecast.acro import acro_oracle
@@ -202,8 +207,8 @@ def summarize_generated(windows: Windows, preds: dict, cfg: ForecastConfig, weig
             g = {"group": gname, "n_windows": int(mask.sum()), "weight_sum": float(wt.sum()), "position": {},
                  "skill_cv": {}, "skill_best": {}}
             for k in methods:
-                g["position"][k] = {"ade_mean": [float(np.average(ade_at(err[k][mask], h), weights=wt)) for h in hs],
-                                    "fde_mean": [float(np.average(fde_at(err[k][mask], h), weights=wt)) for h in hs]}
+                g["position"][k] = {"ade_mean": [_wmean(ade_at(err[k][mask], h), wt) for h in hs],
+                                    "fde_mean": [_wmean(fde_at(err[k][mask], h), wt) for h in hs]}
                 for key, ref in (("skill_cv", REFERENCE), ("skill_best", best_kin)):
                     g[key][k] = {mt: list(skill_ci(wt * v[k][mask], wt * v[ref][mask], inv, counts))
                                  for mt, v in (("ade_1s", ade1), ("fde_1s", fde1))}
@@ -224,9 +229,13 @@ def summarize_generated(windows: Windows, preds: dict, cfg: ForecastConfig, weig
         inv, counts = bootstrap_counts(w.traj, w.meta["mode"], b, cfg.bootstrap_seed)
         wt = versions["weighted"]
         sk = skill_ci(wt * ade1[MODE_METHOD], wt * ade1["physics_acro_gen"], inv, counts)
-        crit["C3"] = {"definition": "tutti, pesata: ADE 1 s (gen) − ADE 1 s (modo noto) ≥ 0 (divario riportato); "
-                                    "IC = skill del modo noto vs gen", "value": gap, "ci": list(sk[1:]),
-                      "skill": sk[0], "pass": bool(gap >= 0)}
+        n = counts.shape[1]
+        boot = (counts @ np.bincount(inv, weights=wt * (ade1["physics_acro_gen"] - ade1[MODE_METHOD]), minlength=n)) \
+            / (counts @ np.bincount(inv, weights=wt, minlength=n))
+        crit["C3"] = {"definition": "tutti, pesata: ADE 1 s (gen) − ADE 1 s (modo noto) ≥ 0 m (divario riportato, "
+                                    "IC bootstrap del divario in m)", "value": gap,
+                      "ci": [float(x) for x in np.percentile(boot, [2.5, 97.5])],
+                      "skill": sk[0], "skill_ci": list(sk[1:]), "pass": bool(gap >= 0)}
     else:
         crit["C3"] = {"definition": "modo noto vs modo ignoto", "value": None, "ci": [None, None], "pass": None}
     crit["C4"] = _oracle_c4(w)
@@ -244,7 +253,8 @@ def _markdown_generated(s: dict, title: str) -> str:
         val = "—" if v["value"] is None else f"{v['value']:+.4g}"
         ci = "" if v["ci"][0] is None else f" [{v['ci'][0]:+.4g}, {v['ci'][1]:+.4g}]"
         esito = {True: "**passa**", False: "**non passa**", None: "n/d"}[v["pass"]]
-        lines.append(f"- **{c}** — {v['definition']}: {val}{ci} → {esito}")
+        sk = f"; skill del modo noto vs gen {_fmt_skill([v['skill'], *v['skill_ci']])}" if "skill_ci" in v else ""
+        lines.append(f"- **{c}** — {v['definition']}: {val}{ci}{sk} → {esito}")
     for vname, label in (("weighted", "pesata (distribuzione naturale)"), ("balanced", "bilanciata (insieme stratificato)")):
         lines += ["", f"## Versione {label}", ""]
         for g in s["versions"][vname]["groups"]:
