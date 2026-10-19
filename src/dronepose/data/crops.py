@@ -6,6 +6,7 @@ import numpy as np
 
 CROP_SIZE = 256
 CROP_FACTOR = 1.6
+BOX_PAD = 0.2   # YOLO label box = keypoint extent + BOX_PAD * larger extent on every side
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,16 @@ def crop_box_from_kpts(kpts2d: np.ndarray, factor: float = CROP_FACTOR, min_side
     lo, hi = kpts2d.min(0), kpts2d.max(0)
     cx, cy = (lo + hi) / 2
     side = max(factor * float(max(hi - lo)), min_side)
+    return CropBox(cx - side / 2, cy - side / 2, side)
+
+
+def crop_box_from_det_box(xyxy: np.ndarray, factor: float = CROP_FACTOR, pad: float = BOX_PAD,
+                          min_side: float = 64.0) -> CropBox:
+    """Setting B: crop from a detected box (YOLO label convention), same crop as setting A when the box is exact."""
+    x0, y0, x1, y1 = (float(v) for v in xyxy)
+    extent = max(x1 - x0, y1 - y0) / (1 + 2 * pad)
+    side = max(factor * extent, min_side)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     return CropBox(cx - side / 2, cy - side / 2, side)
 
 

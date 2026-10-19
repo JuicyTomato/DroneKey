@@ -1,22 +1,25 @@
-"""Ultralytics YOLO-Pose labels: class cx cy w h then (x y v) x 4, normalised to the crop."""
+"""Ultralytics YOLO-Pose labels: class cx cy w h then (x y v) x 4, normalised to the image (crop or full frame)."""
 from pathlib import Path
 
 import numpy as np
 import yaml
 
-from dronepose.data.crops import CROP_SIZE
+from dronepose.data.crops import BOX_PAD, CROP_SIZE
 from dronepose.data.sixdronesyn import DRONE_IDS
 
 CLASS_IDS = {d: i for i, d in enumerate(DRONE_IDS)}
 
 
-def yolo_label_line(cls_id: int, kpts_crop: np.ndarray, size: int = CROP_SIZE, pad: float = 0.2) -> str:
-    lo, hi = kpts_crop.min(0), kpts_crop.max(0)
+def yolo_label_line(cls_id: int, kpts: np.ndarray, size: int | tuple[float, float] = CROP_SIZE,
+                    pad: float = BOX_PAD) -> str:
+    """`size` = side of a square crop, or (width, height) of a full frame; `kpts` in that image's pixels."""
+    wh = np.array((size, size) if np.isscalar(size) else size, float)
+    lo, hi = kpts.min(0), kpts.max(0)
     p = pad * float(max(hi - lo))
-    lo, hi = np.clip(lo - p, 0, size), np.clip(hi + p, 0, size)
-    cx, cy = (lo + hi) / 2 / size
-    w, h = (hi - lo) / size
-    kp = " ".join(f"{x / size:.6f} {y / size:.6f} 2" for x, y in kpts_crop)
+    lo, hi = np.clip(lo - p, 0, wh), np.clip(hi + p, 0, wh)
+    cx, cy = (lo + hi) / 2 / wh
+    w, h = (hi - lo) / wh
+    kp = " ".join(f"{x / wh[0]:.6f} {y / wh[1]:.6f} 2" for x, y in kpts)
     return f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {kp}"
 
 

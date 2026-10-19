@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 import yaml
 
-from dronepose.data.crops import CROP_SIZE, CropBox, crop_box_from_kpts, crop_image, crop_to_frame, frame_to_crop
+from dronepose.data.crops import (CROP_SIZE, CropBox, crop_box_from_det_box, crop_box_from_kpts, crop_image,
+                                  crop_to_frame, frame_to_crop)
 from dronepose.data.export_yolo import CLASS_IDS, write_data_yaml, yolo_label_line
 
 KP = np.array([[900.0, 500.0], [1100.0, 500.0], [1080.0, 560.0], [920.0, 560.0]])
@@ -49,6 +50,40 @@ def test_class_ids_and_yaml(tmp_path):
     write_data_yaml(tmp_path / "data.yaml", "/kaggle/input/x")
     y = yaml.safe_load((tmp_path / "data.yaml").read_text())
     assert y["kpt_shape"] == [4, 3] and y["flip_idx"] == [1, 0, 3, 2] and len(y["names"]) == 7
+
+
+def _parse_label(line: str, size: tuple[float, float]):
+    v = np.array(line.split()[1:], float)
+    w, h = size
+    cx, cy, bw, bh = v[:4] * [w, h, w, h]
+    box = np.array([cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2])
+    return box, v[4:].reshape(4, 3)[:, :2] * [w, h]
+
+
+def test_frame_label_rectangular_roundtrip():
+    line = yolo_label_line(CLASS_IDS["03"], KP, size=(1920, 1080))
+    box, kp = _parse_label(line, (1920, 1080))
+    np.testing.assert_allclose(kp, KP, atol=0.01)        # 6 decimals on 1920 px
+    p = 0.2 * 200.0                                      # pad = 20% of the larger keypoint extent (x: 200 px)
+    np.testing.assert_allclose(box, [900 - p, 500 - p, 1100 + p, 560 + p], atol=0.01)
+
+
+def test_frame_label_box_clipped_to_frame():
+    kp = KP - [890.0, 0.0]                               # left keypoints at x = 10: the padded box would go to x < 0
+    box, _ = _parse_label(yolo_label_line(0, kp, size=(1920, 1080)), (1920, 1080))
+    assert box[0] == pytest.approx(0.0, abs=0.01) and box[2] <= 1920
+
+
+def test_detection_box_gives_back_the_setting_a_crop():
+    box, _ = _parse_label(yolo_label_line(0, KP, size=(1920, 1080)), (1920, 1080))
+    b = crop_box_from_det_box(box)
+    ref = crop_box_from_kpts(KP)
+    assert (b.x0, b.y0, b.side) == (pytest.approx(ref.x0, abs=0.05), pytest.approx(ref.y0, abs=0.05),
+                                    pytest.approx(ref.side, abs=0.05))
+
+
+def test_detection_box_min_side():
+    assert crop_box_from_det_box(np.array([10.0, 10.0, 14.0, 12.0])).side == 64.0
 
 
 @pytest.mark.parametrize("side", [512.0, 100.0])
