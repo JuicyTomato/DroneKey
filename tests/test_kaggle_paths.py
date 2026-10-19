@@ -30,3 +30,12 @@ def test_write_data_yaml_points_to_real_location(tmp_path):
     out = kp.write_data_yaml(cache, tmp_path / "work")
     cfg = yaml.safe_load(out.read_text())
     assert cfg["path"] == str(cache / "yolo_crops") and cfg["train"] == "images/train" and cfg["kpt_shape"] == [4, 3]
+
+
+def test_write_data_yaml_other_subfolder(tmp_path):
+    frames = tmp_path / "dronepose-frames"
+    (frames / "yolo_frames").mkdir(parents=True)
+    (frames / "yolo_frames" / "data.yaml").write_text(yaml.safe_dump({"path": "/wrong", "val": "images/val"}))
+    out = kp.write_data_yaml(frames, tmp_path / "work", sub="yolo_frames", name="data_frames.yaml")
+    assert out.name == "data_frames.yaml"
+    assert yaml.safe_load(out.read_text())["path"] == str(frames / "yolo_frames")

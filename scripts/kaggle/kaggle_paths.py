@@ -14,13 +14,13 @@ def find_dataset(name: str, root: str | Path = "/kaggle/input") -> Path:
     raise FileNotFoundError(f"dataset '{name}' non trovato sotto {root}; presenti: {have}")
 
 
-def write_data_yaml(cache_dir: Path, out_dir: Path) -> Path:
-    """Copy the cache's data.yaml to a writable folder with `path` set to where the crops really are."""
-    crops = Path(cache_dir) / "yolo_crops"
-    cfg = yaml.safe_load((crops / "data.yaml").read_text())
-    cfg["path"] = str(crops)
+def write_data_yaml(cache_dir: Path, out_dir: Path, sub: str = "yolo_crops", name: str = "data.yaml") -> Path:
+    """Copy a dataset's data.yaml to a writable folder with `path` set to where the images really are."""
+    images = Path(cache_dir) / sub
+    cfg = yaml.safe_load((images / "data.yaml").read_text())
+    cfg["path"] = str(images)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "data.yaml"
+    out = out_dir / name
     out.write_text(yaml.safe_dump(cfg, sort_keys=False))
     return out
