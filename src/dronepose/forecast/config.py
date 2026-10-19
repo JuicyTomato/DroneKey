@@ -25,6 +25,12 @@ class ForecastConfig:
     max_tilt_deg: float
     bootstrap_b: int
     bootstrap_seed: int
+    # plan step 3.1b (generated sets): turn-rate and generalised-acro grids
+    ctr_k_grid: tuple[int, ...] = (3, 5, 10)
+    acro_k_grid: tuple[int, ...] = (3, 5, 10)
+    acro_lam_grid: tuple[float, ...] = (0.0, 2.0, 5.0, 8.0, 12.0)
+    acro_thrust: tuple[str, ...] = ("constant", "hold_vz")
+    acro_kd: tuple = ("estimate", 0.0, 0.7)
 
 
 def load_config(path: Path = Path("configs/forecast.json")) -> ForecastConfig:
@@ -39,6 +45,8 @@ def load_config(path: Path = Path("configs/forecast.json")) -> ForecastConfig:
         kf_r_grid=tuple(float(r) for r in d["kf_r_grid"]),
         g=float(d["g"]), max_tilt_deg=float(d["max_tilt_deg"]),
         bootstrap_b=int(d["bootstrap_b"]), bootstrap_seed=int(d["bootstrap_seed"]),
+        **{k: tuple(float(x) if k == "acro_lam_grid" else x for x in d[k])
+           for k in ("ctr_k_grid", "acro_k_grid", "acro_lam_grid", "acro_thrust", "acro_kd") if k in d},
     )
 
 
@@ -55,3 +63,8 @@ def metric_scales(models: dict[str, DroneModel], dji_diagonal_mm: dict[str, floa
         mm = dji_diagonal_mm.get(drone)
         out[drone] = None if mm is None else mm / 1000 / model_diagonal(model)
     return out
+
+
+def load_generator_config(path: Path = Path("configs/generator.json")) -> dict:
+    """Trajectory generator settings (plan step 3.1b): dynamics, controller, pilot, maneuvers, classes, generator."""
+    return json.loads(Path(path).read_text())
