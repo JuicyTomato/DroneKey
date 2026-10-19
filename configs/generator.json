@@ -1,0 +1,206 @@
+{
+  "dynamics": {
+    "dt": 0.0016666666666666668,
+    "out_every": 20,
+    "reorth_every": 60,
+    "k_d": [
+      0.4,
+      1.0
+    ],
+    "tau_w": [
+      0.02,
+      0.06
+    ],
+    "tau_c": [
+      0.015,
+      0.045
+    ],
+    "k_q": [
+      0.0,
+      0.05
+    ],
+    "d_xy": [
+      0.0,
+      0.3
+    ],
+    "delta": [
+      -0.05,
+      0.05
+    ]
+  },
+  "controller": {
+    "tau_att": [
+      0.08,
+      0.15
+    ],
+    "k_v": [
+      1.5,
+      3.0
+    ],
+    "k_vz": 2.0
+  },
+  "pilot": {
+    "mode_probs": {
+      "acro": 0.2,
+      "angle": 0.4,
+      "pmode": 0.4
+    },
+    "s_tercile_probs": [
+      0.4,
+      0.4,
+      0.2
+    ],
+    "styles": [
+      "cine",
+      "normale",
+      "sport"
+    ],
+    "yaw_policy_probs": {
+      "fixed": 0.5,
+      "slow": 0.3,
+      "toward_motion": 0.2
+    },
+    "yaw_rate_slow_deg": 30.0,
+    "max_yaw_rate_deg": 120.0,
+    "yaw_gain": 2.0,
+    "max_tilt_deg": [
+      20.0,
+      45.0
+    ],
+    "max_rate_deg": [
+      60.0,
+      300.0
+    ],
+    "max_speed": [
+      2.0,
+      15.0
+    ],
+    "seg_duration": [
+      0.3,
+      2.0
+    ],
+    "n_segments": 24,
+    "reaction_delay": [
+      0.15,
+      0.3
+    ],
+    "overshoot": [
+      0.0,
+      0.15
+    ],
+    "hand_band_hz": [
+      2.0,
+      5.0
+    ],
+    "stick_noise": [
+      0.005,
+      0.03
+    ],
+    "noise_freq_hz": [
+      0.2,
+      2.0
+    ],
+    "deadzone": [
+      0.0,
+      0.03
+    ],
+    "rate_hz": 120.0
+  },
+  "maneuvers": {
+    "probs": {
+      "cruise": 0.16,
+      "hover": 0.08,
+      "lateral": 0.1,
+      "backward": 0.06,
+      "climb": 0.06,
+      "descend": 0.06,
+      "orbit": 0.1,
+      "dolly": 0.06,
+      "reveal": 0.06,
+      "slalom": 0.08,
+      "figure8": 0.08,
+      "helix": 0.1
+    },
+    "abrupt_prob": 0.15,
+    "abrupt_types": [
+      "step_max",
+      "brake",
+      "reversal",
+      "high_gain"
+    ],
+    "orbit_radius": [
+      2.0,
+      10.0
+    ],
+    "slalom_freq_hz": [
+      0.3,
+      0.8
+    ],
+    "figure8_period": [
+      4.0,
+      8.0
+    ],
+    "high_gain_factor": 3.0
+  },
+  "classes": {
+    "01": {
+      "max_speed": 16,
+      "climb": 5,
+      "descent": 3,
+      "c_max_g": 2.0
+    },
+    "02": {
+      "max_speed": 16,
+      "climb": 5,
+      "descent": 3,
+      "c_max_g": 2.0
+    },
+    "03": {
+      "max_speed": 21,
+      "climb": 8,
+      "descent": 6,
+      "c_max_g": 2.0
+    },
+    "04": {
+      "max_speed": 19,
+      "climb": 6,
+      "descent": 6,
+      "c_max_g": 2.0
+    },
+    "05": {
+      "max_speed": 20,
+      "climb": 6,
+      "descent": 6,
+      "c_max_g": 2.0
+    },
+    "06": {
+      "max_speed": 21,
+      "climb": 8,
+      "descent": 6,
+      "c_max_g": 2.0
+    },
+    "08": {
+      "max_speed": 8,
+      "climb": 2,
+      "descent": 2,
+      "c_max_g": 1.6
+    }
+  },
+  "generator": {
+    "fps": 30,
+    "n_frames": 60,
+    "freeze_idx": 29,
+    "warmup_s": [
+      3.0,
+      4.0
+    ],
+    "block": 64,
+    "chunk": 512,
+    "tilt_margin_deg": 15.0,
+    "c_cmd_range_g": [
+      0.3,
+      2.5
+    ],
+    "max_fall_m": 10.0
+  }
+}
