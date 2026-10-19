@@ -83,3 +83,10 @@ def test_r_at_grid_edge_is_flagged():
     params = tune(_windows([_traj(circle=True, seed=1)]), CFG)
     assert params["kf_ca"]["r"] == CFG.kf_r_grid[0]
     assert any(m.startswith("kf_ca: r = ") for m in params["edge_warnings"])
+
+
+def test_predict_all_with_pre_31b_params_says_to_retune():
+    w = _windows([_traj()])
+    old = {"cv_k": 2, "ca_k": 3, "kf_cv": {"q": 1.0, "r": 1e-6}, "kf_ca": {"q": 1.0, "r": 1e-6}}
+    with pytest.raises(ValueError, match="tune_baselines"):
+        predict_all(w, old, CFG)

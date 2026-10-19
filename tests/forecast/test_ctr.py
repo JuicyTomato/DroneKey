@@ -57,3 +57,17 @@ def test_vertical_is_cv():
     obs, fut = split(p)
     for fn in (ctrv, ctra):
         np.testing.assert_allclose(fn(OBS_T, obs, FUT_T, 5)[..., 2], fut[..., 2], atol=1e-9)
+
+
+def test_ctra_stops_instead_of_reversing():
+    # braking along x: the fitted deceleration must stop the drone, not drive it backwards
+    v0, a = 2.0, -4.0
+    t = T_ALL - T_ALL[0]
+    t_stop = -v0 / a
+    x = np.where(t < t_stop, v0 * t + a * t ** 2 / 2, v0 * t_stop + a * t_stop ** 2 / 2)
+    p = np.stack([x, np.zeros_like(x), np.zeros_like(x)], -1)[None]
+    obs, _ = split(p)
+    pred = ctra(OBS_T, obs, FUT_T, 5)
+    assert (np.diff(pred[0, :, 0]) >= -1e-12).all()
+    v_last = v0 + a * t[N - 1]                     # speed at the last observation (it stops 0.1 s later)
+    assert pred[0, -1, 0] <= v_last ** 2 / (2 * -a) + 0.01

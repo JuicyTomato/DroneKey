@@ -138,6 +138,10 @@ def _tune_acro(w: Windows, cfg: ForecastConfig, H: int, grid: list) -> dict:
 
 
 def predict_all(windows: Windows, params: dict, cfg: ForecastConfig) -> dict[str, np.ndarray]:
+    missing = [k for k in ("ctr_k", "acro_k", "acro_kd", "acro_gen") if k not in params]
+    if missing:
+        raise ValueError(f"tuning parameters without {missing} (written before step 3.1b): "
+                         "re-run scripts/forecast/tune_baselines.py")
     w = windows
     args = (w.obs_t, w.obs_p, w.fut_t)
     out = {
