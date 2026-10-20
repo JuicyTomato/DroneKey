@@ -46,3 +46,11 @@ def crop_image(img: np.ndarray, box: CropBox, size: int = CROP_SIZE) -> np.ndarr
     m = np.array([[s, 0.0, -box.x0 * s], [0.0, s, -box.y0 * s]])
     return cv2.warpAffine(img, m, (size, size), flags=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR,
                           borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+
+def label_box_xyxy(kpts2d: np.ndarray, wh=(1920, 1080), pad: float = BOX_PAD) -> np.ndarray:
+    """YOLO label box in pixels: keypoint extent + pad * larger extent on every side, clipped to the frame."""
+    k = np.asarray(kpts2d, float)
+    lo, hi = k.min(0), k.max(0)
+    p = pad * float(max(hi - lo))
+    return np.r_[np.clip(lo - p, 0, wh), np.clip(hi + p, 0, wh)]

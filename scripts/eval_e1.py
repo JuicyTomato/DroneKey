@@ -2,10 +2,11 @@
 
 Usage:
   python scripts/eval_e1.py [--split val|test] [--allow-test] [--breakdown] [--ref NAME]
-      [--group NAME=N1,N2,N3] --out OUT.json SPEC...
+      [--group NAME=N1,N2,N3] [--det-metrics NAME=DETS.jsonl ...] --out OUT.json SPEC...
 SPEC = NAME=KPTS.jsonl[,det=DETS.jsonl][,cls=gt|frame|causal]
   det: JSONL with boxes (box_conf becomes the AP score); cls: drone class given to the 3D model
   (gt = true drone, frame = detected class, causal = running majority vote; frame/causal need det).
+--det-metrics: detection quality (IoU with the label box, class accuracy, no-detection rate), saved under "detection".
 """
 import argparse
 import json
@@ -14,6 +15,7 @@ from pathlib import Path
 from dronepose.data.canonical import read_jsonl
 from dronepose.data.drone_models import load_drone_models
 from dronepose.eval.bootstrap import by_trajectory, paired_bootstrap
+from dronepose.eval.detection import detection_metrics
 from dronepose.eval.e1 import e1_table, mean_std
 from dronepose.keypoints.detections import class_causal_vote, class_per_frame, load_detections
 from dronepose.pose.replay import check_no_test, load_keypoints, replay
@@ -48,7 +50,8 @@ def _fmt(v) -> str:
 
 def run(specs: list[str], split: str = "val", allow_test: bool = False, breakdown: bool = False,
         ref: str | None = None, groups: list[str] | None = None, records: list[dict] | None = None,
-        canonical: Path | None = None, models_path: Path = Path("configs/drone_models.json")) -> dict:
+        canonical: Path | None = None, models_path: Path = Path("configs/drone_models.json"),
+        det_metrics: list[str] | None = None) -> dict:
     """Evaluate every spec on `split` and return {models, bootstrap, groups}; rejects test records without allow_test."""
     parsed = [parse_spec(s) for s in specs]
     names = [p["name"] for p in parsed]
@@ -99,6 +102,21 @@ def run(specs: list[str], split: str = "val", allow_test: bool = False, breakdow
         for row in ROWS:
             print(f"{gname:8s} {row:5s} " + "  ".join(
                 f"{k}={_fmt(ms[row][k]['mean'])}±{_fmt(ms[row][k]['std'])}" for k in SHOWN if k != "n_frames"))
+
+    if det_metrics:
+        out["detection"] = {}
+        for item in det_metrics:
+            name, sep, path = item.partition("=")
+            if not sep or not name or not path:
+                raise ValueError(f"bad --det-metrics {item!r}: expected NAME=DETS.jsonl")
+            m = detection_metrics(load_detections(Path(path)), records)
+            out["detection"][name] = m
+            print(f"\ndetection {name}: frames {m['n_frames']}  no-det {_fmt(m['no_det_rate'])}  "
+                  f"IoU median {_fmt(m['iou_median'])} p10 {_fmt(m['iou_p10'])} >=0.5 {_fmt(m['iou_ge_05'])}  "
+                  f"class acc {_fmt(m['class_acc'])}")
+            print("  class acc by drone: " + "  ".join(f"{d}={_fmt(v)}" for d, v in m["class_acc_by_drone"].items()))
+            for true, preds in m["confusion"].items():
+                print(f"  true {true}: " + "  ".join(f"{p}={c}" for p, c in preds.items()))
     return out
 
 
@@ -110,9 +128,11 @@ def main(argv=None) -> None:
     ap.add_argument("--breakdown", action="store_true")
     ap.add_argument("--ref", default=None, help="reference model for the bootstrap (default: first SPEC)")
     ap.add_argument("--group", action="append", default=[], metavar="NAME=N1,N2,N3")
+    ap.add_argument("--det-metrics", action="append", default=[], metavar="NAME=DETS.jsonl")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
-    out = run(args.specs, args.split, args.allow_test, args.breakdown, args.ref, args.group)
+    out = run(args.specs, args.split, args.allow_test, args.breakdown, args.ref, args.group,
+              det_metrics=args.det_metrics)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(out, indent=2))
 

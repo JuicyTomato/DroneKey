@@ -39,11 +39,12 @@ ap.add_argument("--weights", required=True)
 ap.add_argument("--splits", nargs="+", default=["val", "test"])
 ap.add_argument("--batch", type=int, default=64)
 ap.add_argument("--out", default="/kaggle/working/keypoints")
+ap.add_argument("--crops", default=None, help="crops directory (default: dronepose-cache/yolo_crops)")
 ap.add_argument("--limit", type=int, default=None, help="smoke test: only the first N crops per split")
 args = ap.parse_args()
 log(f"args: {vars(args)}")
 
-crops = find_dataset("dronepose-cache") / "yolo_crops"
+crops = Path(args.crops) if args.crops else find_dataset("dronepose-cache") / "yolo_crops"
 log(f"crops: {crops}")
 model = YOLO(args.weights)
 log(f"model loaded: {args.weights}")
