@@ -80,3 +80,26 @@ def test_global_replay_matches_online_pipeline_and_handles_two_sequences(tmp_pat
     got = [x["rot_err_deg"] for x in by_seq["03_01_05_090"]]
     assert [g is None for g in got] == [x["rot_err_deg"] is None for x in online]
     assert [g for g in got if g is not None] == pytest.approx([x["rot_err_deg"] for x in online if x["rot_err_deg"] is not None])
+
+
+def _drone02_sequence(tmp_path):
+    R = Rotation.from_euler("xyz", [0.3, 0.1, 0.5]).as_matrix()
+    seqs = [FakeSequence("03", "02", "05", 90, 20, R, np.array([-0.3, 0.0, 3.0]), np.array([0.01, 0.0, 0.0])),
+            FakeSequence("03", "01", "05", 90, 3, R, np.array([0.2, 0.1, 3.5]))]   # only to build the 01 model
+    write_fake_dataset(tmp_path / "ds", seqs)
+    frames = list(iter_frames(tmp_path / "ds"))
+    models = build_drone_models(frames)
+    return [to_canonical(f, models) for f in frames if f.drone == "02"], models
+
+
+def test_replay_model_drone_changes_pose_not_metric_symmetry(tmp_path):
+    recs, models = _drone02_sequence(tmp_path)
+    _write_kpts(tmp_path / "k.jsonl", recs)
+    kpts = load_keypoints(tmp_path / "k.jsonl")
+    base = replay(recs, kpts, models)["03_02_05_090"]
+    same = replay(recs, kpts, models, model_drone={r["frame_id"]: "02" for r in recs})["03_02_05_090"]
+    assert same == base
+    wrong = replay(recs, kpts, models, model_drone={r["frame_id"]: "01" for r in recs})["03_02_05_090"]
+    got = [(b, w) for b, w in zip(base, wrong) if b["t"] is not None and w["t"] is not None]
+    assert got and all(not np.allclose(b["t"], w["t"], atol=1e-3) for b, w in got)
+    assert [w["frame_id"] for w in wrong] == [b["frame_id"] for b in base]

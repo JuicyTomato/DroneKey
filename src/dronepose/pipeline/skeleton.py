@@ -15,9 +15,11 @@ from dronepose.pose.pnp import PnPSolution, solve_ippe
 from dronepose.trajectory.baselines import constant_velocity
 
 
-def ippe_candidates(record: dict, kpts: np.ndarray, models: dict[str, DroneModel]) -> list[PnPSolution]:
+def ippe_candidates(record: dict, kpts: np.ndarray, models: dict[str, DroneModel],
+                    drone: str | None = None) -> list[PnPSolution]:
+    """IPPE candidates; `drone` picks the 3D model (default: the record's true drone)."""
     try:
-        return solve_ippe(models[record["drone"]].kpts_flu, np.asarray(kpts)[:, :2], np.array(record["K"]))
+        return solve_ippe(models[drone or record["drone"]].kpts_flu, np.asarray(kpts)[:, :2], np.array(record["K"]))
     except ValueError:
         return []
 

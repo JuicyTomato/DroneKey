@@ -40,11 +40,13 @@ def _by_sequence(records: list[dict]) -> dict[str, list[dict]]:
 
 def replay(records: list[dict], kpts_by_id: dict[str, np.ndarray], models: dict[str, DroneModel],
            strategy: str = "reproj", params=None, obs: int = 15, horizon: int = 30,
-           up=None) -> dict[str, list[dict]]:
+           up=None, model_drone: dict[str, str] | None = None) -> dict[str, list[dict]]:
+    """Replay saved keypoints; `model_drone[frame_id]` overrides the 3D model (metrics stay on the true drone)."""
     out = {}
     for key, recs in _by_sequence(records).items():
         kpts = [kpts_by_id.get(r["frame_id"], no_detection()) for r in recs]
-        cands = [ippe_candidates(r, kp, models) for r, kp in zip(recs, kpts)]
+        cands = [ippe_candidates(r, kp, models, model_drone[r["frame_id"]] if model_drone else None)
+                 for r, kp in zip(recs, kpts)]
         choices = disambiguate(cands, strategy, params, frame_idx=[r["frame_idx"] for r in recs], up=up)
         out[key] = assemble_results(recs, kpts, cands, choices, obs, horizon)
         for res in out[key]:
