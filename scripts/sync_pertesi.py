@@ -89,6 +89,19 @@ PLAN = {
         "documenti": ["docs/superpowers/specs/2026-10-16-fase3-generatore-design.md",
                       "docs/superpowers/plans/2026-10-16-fase3-generatore.md"],
     },
+    "11_Fase3_reti": {
+        "codice": [f"{S}/forecast/nets", f"{S}/forecast/noise.py", "configs/nets.json"],
+        "script": ["scripts/forecast/nets"],
+        "test": ["tests/forecast/nets", "tests/forecast/test_noise_mixture.py", "tests/forecast/test_generate_sets.py"],
+        "risultati": [f"experiments/forecast/nets/{d}" for d in ("gen_val", "noise", "dronesyn_val")]
+                     + [f"experiments/forecast/nets/{f}" for f in ("criteria.json", "table.md", "learning_curve.json",
+                                                                   "histories.json", "base_params_noisy.json",
+                                                                   "runs.log", "generate.log")]
+                     + ["data/processed/forecast_nets/pools.json", "data/processed/forecast_gen/strat_report_select.json",
+                        "data/processed/forecast_gen/strat_report_train_big.json"],
+        "documenti": ["docs/superpowers/specs/2026-10-20-fase3-reti-design.md",
+                      "docs/superpowers/plans/2026-10-20-fase3-reti.md"],
+    },
 }
 
 
