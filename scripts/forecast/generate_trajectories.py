@@ -21,8 +21,8 @@ from dronepose.forecast.dataset import load_trajectories, save_trajectories
 from dronepose.forecast.generator import generate, simulate_candidates
 from dronepose.forecast.stratify import cell_edges, cell_key, natural_cell_probs, stratified_generate
 
-SEEDS = {"train": 1, "val": 2, "test": 3, "active": 4}
-SIZES = {"train": 10000, "val": 2000, "test": 2000, "active": 2000}
+SEEDS = {"train": 1, "val": 2, "test": 3, "active": 4, "select": 5, "train_big": 6}   # select, train_big: nets (3.3)
+SIZES = {"train": 10000, "val": 2000, "test": 2000, "active": 2000, "select": 2000, "train_big": 50000}
 
 def rejection_summary(rejected_by: dict, n_candidates: int) -> None:
     by_reason, by_mode = Counter(), Counter()
