@@ -105,3 +105,24 @@ def summarize_retuned(runs: list[dict]) -> dict:
         lvl["edge_warnings"] = [r.get("edge_warnings", []) for r in rs]
         out[key] = lvl
     return out
+
+
+# ----- nets (plan step 3.3): a noise level per window -------------------------------------------------------------
+
+def add_pose_noise_per_window(windows: Windows, sigma_p_cm: np.ndarray, sigma_r_deg: np.ndarray,
+                              rng: np.random.Generator) -> Windows:
+    """As add_pose_noise with one (sigma_p, sigma_r) per window; constant sigmas give the same draws and values."""
+    w = windows
+    sp = np.asarray(sigma_p_cm, float)[:, None, None] / 100
+    obs_p = w.obs_p + sp * rng.normal(size=w.obs_p.shape)
+    W, N = w.obs_R.shape[:2]
+    sr = np.repeat(np.radians(np.asarray(sigma_r_deg, float)), N)[:, None]
+    dR = Rotation.from_rotvec(sr * rng.normal(size=(W * N, 3))).as_matrix()
+    obs_R = np.asarray(w.obs_R, float) @ dR.reshape(W, N, 3, 3)
+    return dataclasses.replace(w, obs_p=obs_p, obs_R=obs_R, obs_u=obs_R[..., :, 2])
+
+
+def sample_mixture_sigmas(W: int, rng: np.random.Generator, max_p_cm: float = 5.0,
+                          max_r_deg: float = 3.0) -> tuple[np.ndarray, np.ndarray]:
+    """Training noise mixture (spec §5.3): sigma_p ~ U(0, max_p_cm), sigma_r ~ U(0, max_r_deg), independent."""
+    return rng.uniform(0, max_p_cm, W), rng.uniform(0, max_r_deg, W)
