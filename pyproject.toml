@@ -18,6 +18,7 @@ dependencies = [
 dev = ["pytest>=8.0", "matplotlib>=3.8"]
 train = ["ultralytics>=8.3"]
 plots = ["matplotlib>=3.8"]
+nets = ["torch>=2.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

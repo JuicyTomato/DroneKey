@@ -1,0 +1,20 @@
+{
+  "obs_len": 15,
+  "pred_len": 30,
+  "rnn": "gru",
+  "hidden": 128,
+  "layers": 2,
+  "head": [128, 128],
+  "gate_hidden": 64,
+  "lr": 1e-3,
+  "batch": 512,
+  "max_epochs": 100,
+  "patience": 10,
+  "K": 8,
+  "noise_max_p_cm": 5.0,
+  "noise_max_r_deg": 3.0,
+  "seeds": [0, 1, 2],
+  "sizes": {"train_big": 50000, "select": 2000},
+  "set_seeds": {"select": 5, "train_big": 6},
+  "pool_seed": 0
+}
