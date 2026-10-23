@@ -51,6 +51,12 @@ def registry_row(run_dir: Path) -> dict:
         best = max(rows, key=lambda r: float(r[_MAP]))
         row["best_epoch"] = int(float(best["epoch"]))
         row["train_hours"] = float(rows[-1]["time"]) / 3600
+    elif (run_dir / "history.json").exists():  # DroneKey runs: one row per epoch, no results.csv
+        hist = json.loads((run_dir / "history.json").read_text())
+        row["epochs_done"] = len(hist)
+        if hist:
+            row["best_epoch"] = min(range(len(hist)), key=lambda i: hist[i]["val_px_median"]) + 1
+            row["train_hours"] = sum(r["seconds"] for r in hist) / 3600
     return row
 
 

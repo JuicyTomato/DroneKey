@@ -68,3 +68,13 @@ def test_update_registry_replaces_by_name(tmp_path):
     update_registry(reg, [{"name": "a", "v": 2}])
     rows = [json.loads(line) for line in reg.read_text().splitlines()]
     assert rows == [{"name": "a", "v": 2}, {"name": "b", "v": 1}]
+
+
+def test_registry_row_from_history_json(tmp_path):
+    run = tmp_path / "dk"
+    run.mkdir()
+    (run / "run_info.json").write_text(json.dumps({"name": "dk", "seed": 0, "recipe": "final", "setting": "crop"}))
+    hist = [{"epoch": e, "val_px_median": px, "seconds": 1800.0} for e, px in ((1, 5.0), (2, 2.0), (3, 3.0))]
+    (run / "history.json").write_text(json.dumps(hist))
+    row = registry_row(run)
+    assert row["epochs_done"] == 3 and row["best_epoch"] == 2 and row["train_hours"] == 1.5
