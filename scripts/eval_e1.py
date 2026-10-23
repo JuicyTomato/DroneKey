@@ -22,7 +22,7 @@ from dronepose.pose.replay import check_no_test, load_keypoints, replay
 
 ROWS = ("all", "no08", "08")
 SHOWN = ("n_frames", "coverage", "median_rot_sym", "p90_rot_sym", "median_t_camera", "median_t_meters",
-         "flip_rate", "px_median", "px_p90", "pck_5px", "identity", "oks_ap", "sr90")
+         "flip_rate", "px_median", "px_p90", "pck_5px", "identity", "oks_ap", "ap_paper", "sr90")
 
 
 def parse_spec(spec: str) -> dict:

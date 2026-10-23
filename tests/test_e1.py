@@ -76,6 +76,25 @@ def test_coverage_and_missing_keypoints():
     assert m["sr90"] == pytest.approx(0.75)                         # OKS 0.975 on 3 of 4 frames
 
 
+def test_e1_has_ap_paper_and_old_keys_unchanged():
+    records = [rec(f"14_01_a_{i}", "01") for i in range(4)]
+    by_id = {r["frame_id"]: r for r in records}
+    results = ([res(r["frame_id"], rot=1.0 + i, t_err=1.0 + i) for i, r in enumerate(records[:3])]
+               + [res(records[3]["frame_id"], posed=False)])
+    kpts = {r["frame_id"]: kp(offset=3.0 * i) for i, r in enumerate(records[:3])}
+    m = e1_metrics(results, by_id, kpts)
+    golden = {"n_frames": 4, "coverage": 0.75, "median_rot_sym": 2.0, "p90_rot_sym": 2.8, "median_t_camera": 2.0,
+              "median_t_world": 3.436, "median_t_meters": 1.4926, "flip_rate": 0.0, "px_median": 4.242640687119285,
+              "px_p90": 7.636753236814712, "pck_2px": 0.25, "pck_5px": 0.5, "pck_10px": 0.75,
+              "pck_0.02diag": 0.25, "pck_0.05diag": 0.5, "identity": 1.0, "oks_ap": 0.7277227722772277,
+              "sr90": 0.75, "sr95": 0.5}                          # recorded before ap_paper was added
+    assert set(m) == set(golden) | {"ap_paper"}
+    for k, v in golden.items():
+        assert m[k] == pytest.approx(v), k
+    # OKS = [1, 0.9753, 0.9048, 0 (missing frame)]: 0.75 up to 0.90 (9 thresholds), 0.50 at 0.95
+    assert m["ap_paper"] == pytest.approx(0.725)
+
+
 def test_perfect_keypoints_and_scores():
     records = [rec("14_01_a_1", "01"), rec("14_01_a_2", "01")]
     by_id = {r["frame_id"]: r for r in records}

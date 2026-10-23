@@ -1,7 +1,7 @@
 """E1 table: pose, translation and keypoint metrics per subset of frames (all / no08 / 08 / breakdowns)."""
 import numpy as np
 
-from dronepose.eval.keypoint_metrics import frame_px_error, identity_ok, oks, oks_ap, pck, success_rate
+from dronepose.eval.keypoint_metrics import ap_paper, frame_px_error, identity_ok, oks, oks_ap, pck, success_rate
 from dronepose.eval.units import METERS_PER_UNIT, WORLD_PER_CAMERA, tilt_deg
 
 _MISSING = np.full((4, 3), np.nan)
@@ -74,6 +74,7 @@ def e1_metrics(results: list[dict], records_by_id: dict[str, dict], kpts_by_id: 
         "pck_0.02diag": rel[0.02], "pck_0.05diag": rel[0.05],
         "identity": float(np.mean(ident)) if ident else None,
         "oks_ap": oks_ap(oks_v, scores),
+        "ap_paper": ap_paper(oks_v),
         "sr90": success_rate(oks_v, 0.90), "sr95": success_rate(oks_v, 0.95),
     }
 

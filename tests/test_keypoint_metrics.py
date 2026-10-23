@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from dronepose.eval.keypoint_metrics import frame_px_error, identity_ok, oks, oks_ap, pck, success_rate
+from dronepose.eval.keypoint_metrics import ap_paper, frame_px_error, identity_ok, oks, oks_ap, pck, success_rate
 from dronepose.keypoints.predictors import no_detection
 
 
@@ -56,3 +56,23 @@ def test_missing_everywhere_does_not_crash():
 def test_oks_ap_false_positive_ranked_first_lowers_precision():
     # FP first (precision 0.5 at recall 0.5): AP ~ 0.5 * 0.505
     assert oks_ap([0.0, 1.0], [0.9, 0.8]) == pytest.approx(0.2525, abs=0.01)
+
+
+def test_ap_paper_all_perfect():
+    assert ap_paper([1.0, 1.0, 1.0]) == pytest.approx(1.0)
+
+
+def test_ap_paper_half():
+    assert ap_paper([1.0, 0.0]) == pytest.approx(0.5)
+
+
+def test_ap_paper_independent_of_order():
+    v = [0.97, 0.52, 0.0, 0.91, 1.0, 0.77]
+    assert ap_paper(v) == pytest.approx(ap_paper(v[::-1]))
+    assert ap_paper(v) == pytest.approx(ap_paper(sorted(v)))
+
+
+def test_ap_paper_mean_over_thresholds_and_empty():
+    # one frame at OKS 0.8: success at 0.50..0.80 (7 of 10 thresholds)
+    assert ap_paper([0.8]) == pytest.approx(0.7)
+    assert ap_paper([]) == 0.0

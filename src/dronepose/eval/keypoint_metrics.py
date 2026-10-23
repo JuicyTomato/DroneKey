@@ -57,6 +57,11 @@ def success_rate(oks_values: list[float], threshold: float) -> float:
     return float(np.mean(np.asarray(oks_values, float) >= threshold)) if len(oks_values) else 0.0
 
 
+def ap_paper(oks_values: list[float]) -> float:
+    """AP as the DroneKey paper defines it: mean over OKS thresholds 0.50:0.05:0.95 of the success rate (no scores)."""
+    return float(np.mean([success_rate(oks_values, t) for t in _OKS_THRESHOLDS]))
+
+
 def oks_ap(oks_values: list[float], scores: list[float]) -> float:
     """COCO-style AP averaged over OKS thresholds 0.50:0.05:0.95; one GT per frame, score -inf = no prediction."""
     o, s = np.asarray(oks_values, float), np.asarray(scores, float)
