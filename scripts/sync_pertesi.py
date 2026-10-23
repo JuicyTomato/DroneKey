@@ -102,6 +102,15 @@ PLAN = {
         "documenti": ["docs/superpowers/specs/2026-10-20-fase3-reti-design.md",
                       "docs/superpowers/plans/2026-10-20-fase3-reti.md"],
     },
+    # the authors' train.py is not ours and is not copied: the chapter README (hand-written) links it
+    "12_DroneKey": {
+        "codice": [f"{S}/keypoints/dronekey", "configs/dronekey.json"],
+        "script": ["scripts/dronekey", "scripts/kaggle/train_dronekey.py", "scripts/kaggle/bench_dronekey.py"],
+        "test": ["tests/dronekey"],
+        "risultati": ["experiments/dronekey"],
+        "documenti": ["docs/superpowers/specs/2026-10-21-fase1-dronekey-design.md",
+                      "docs/superpowers/plans/2026-10-21-fase1-dronekey.md"],
+    },
 }
 
 
