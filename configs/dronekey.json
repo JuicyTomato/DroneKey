@@ -1,0 +1,22 @@
+{
+  "model": {"d": 1024, "n_layers": 6, "nhead": 8, "ffn": 2048, "dropout": 0.1,
+            "wiring": "paper", "head": "gated", "cr_softplus": true},
+  "loss": {"kind": "pose_adaptive", "alpha": 5, "D": 10, "eps": 1e-4},
+  "train": {"lr": 1e-5, "batch": 8, "epochs": 100, "amp": true, "workers": 4, "seeds": [0, 1, 2]},
+  "input": {"size_in": 256, "size_out": 224, "mean": [0.485, 0.456, 0.406],
+            "std": [0.229, 0.224, 0.225], "flip_idx": [1, 0, 3, 2]},
+  "recipe": "final",
+  "ladder_epochs": 20,
+  "overfit": {"n": 256, "batch": 8, "epochs": 300, "lr": 1e-5, "target_px": 1.0},
+  "variants": {
+    "G0": {"model": {"head": "mean_linear"}, "loss": {"kind": "mse"}},
+    "G1": {"model": {"head": "last_layer"}, "loss": {"kind": "mse"}},
+    "G2": {"loss": {"kind": "mse"}},
+    "G3": {"loss": {"kind": "gaussian"}},
+    "G4": {},
+    "G5": {"recipe": "none"},
+    "G6": {"model": {"wiring": "code"}},
+    "paper": {},
+    "code": {"model": {"wiring": "code"}}
+  }
+}
