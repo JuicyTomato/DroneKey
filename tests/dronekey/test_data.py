@@ -98,3 +98,39 @@ def test_dataset_rejects_bad_labels_at_construction(tmp_path):
     lab.unlink()
     with pytest.raises(FileNotFoundError, match="f_0001"):
         CropDataset(root, "train", "none", False, INPUT)
+
+
+def _make_distinct(root, n=20):
+    _make(root, n=n)
+    for i in range(n):  # distinct keypoints per frame so an order mix-up is detected
+        vals = " ".join(f"{(x + i * 0.01) % 1.0} {y} 2" for x, y in KP)
+        (root / "labels/train" / f"f_{i:04d}.txt").write_text(f"0 0.5 0.5 0.9 0.9 {vals}\n")
+    return root
+
+
+def test_dataset_threaded_load_matches_serial(tmp_path, capsys):
+    root = _make_distinct(tmp_path)
+    one = CropDataset(root, "train", "none", False, INPUT, cache_ram=True, io_threads=1)
+    many = CropDataset(root, "train", "none", False, INPUT, cache_ram=True, io_threads=8)
+    assert [it[0] for it in one.items] == [it[0] for it in many.items]
+    assert all(np.array_equal(a, b) for a, b in zip(one.kpts, many.kpts))
+    assert not np.array_equal(one.kpts[0], one.kpts[1])
+    assert len(one.cache) == len(many.cache) == 20
+    assert all(np.array_equal(a, b) for a, b in zip(one.cache, many.cache))
+    out = capsys.readouterr().out
+    assert "labels 20 in" in out and "images cached 20 in" in out
+
+
+def test_dataset_threaded_load_raises_from_constructor(tmp_path):
+    root = _make_distinct(tmp_path)
+    lab = root / "labels/train/f_0007.txt"
+    lab.write_text("0 0.5 0.5 0.9 0.9 0.1 0.1 2\n")
+    with pytest.raises(ValueError, match="f_0007"):
+        CropDataset(root, "train", "none", False, INPUT, io_threads=8)
+    lab.unlink()
+    with pytest.raises(FileNotFoundError, match="f_0007"):
+        CropDataset(root, "train", "none", False, INPUT, io_threads=8)
+    (root / "labels/train/f_0007.txt").write_text(f"0 0.5 0.5 0.9 0.9 {' '.join(f'{x} {y} 2' for x, y in KP)}\n")
+    (root / "images/train/f_0003.jpg").write_bytes(b"not a jpeg")
+    with pytest.raises(FileNotFoundError, match="f_0003"):
+        CropDataset(root, "train", "none", False, INPUT, cache_ram=True, io_threads=8)
