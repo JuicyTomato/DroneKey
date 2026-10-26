@@ -100,3 +100,79 @@ def test_solver_timing():
                         repeats=2)
     assert out["n"] == 4  # f0, f1 x 2 repeats; f2 non-finite and f3 missing are skipped
     assert 0 < out["median_ms"] <= out["p90_ms"]
+
+
+def _load_eval_e3():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("eval_e3", Path("scripts/eval_e3.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+eval_e3 = _load_eval_e3()
+
+
+def test_eval_e3_rejects_test_without_flag():
+    records = [{"frame_id": "06_01_a_1", "drone": "01", "scene": "06", "split": "test", "frame_idx": 1}]
+    with pytest.raises(ValueError, match="test split"):
+        eval_e3.run([("s0", "missing.jsonl")], "missing_dets.jsonl", split="test", allow_test=False, records=records)
+
+
+def test_eval_e3_compare_needs_chosen_and_known_names():
+    with pytest.raises(ValueError, match="--chosen"):
+        eval_e3.run([("s0", "k.jsonl")], "d.jsonl", compare_dronekeypp=True, records=[])
+    with pytest.raises(ValueError, match="unknown"):
+        eval_e3.select_combos(["ippe+nonsense"])
+    assert {c.name for c in eval_e3.select_combos(["epnp+reproj"])} == {"epnp+reproj", "ippe+global"}
+    assert len(eval_e3.select_combos(None)) == 64
+
+
+def test_parse_seed():
+    assert eval_e3.parse_seed("s0=a/b.jsonl") == ("s0", "a/b.jsonl")
+    with pytest.raises(ValueError):
+        eval_e3.parse_seed("s0")
+
+
+def _fake(cov, rot, flip=0.0, groups=None):
+    """Per-seed evaluation as `Context.evaluate` returns it: table rows all/no08 and rot groups by trajectory."""
+    return {"table": {"all": {"coverage": cov, "median_rot_sym": rot}, "no08": {"flip_rate": flip}},
+            "rot": groups}
+
+
+def test_select_on_val_wiring():
+    rng = np.random.default_rng(0)
+    base = {f"t{i}": list(rng.normal(2.0, 0.3, 40)) for i in range(6)}
+    far = {t: [v + 3.0 for v in vs] for t, vs in base.items()}
+    seeds = ["s0", "s1", "s2"]
+
+    def seed_data(better_rot):
+        return {
+            "ippe+global": _fake(0.97, 2.0, groups=base),
+            "ippe+reproj": _fake(0.97, 2.0 - better_rot, groups={t: [v - better_rot for v in vs] for t, vs in base.items()}),
+            "epnp+reproj": _fake(0.97, 5.0, groups=far),
+            "sqpnp+global": _fake(0.80, 0.1, groups=base),          # best median but coverage too low
+            "iterative+global": _fake(0.97, None, groups={}),       # no pose: excluded, no crash
+        }
+    # clearly separated: the best (ippe+reproj, 1.0 deg better in every seed) wins; ippe+global is not tied with it
+    sel = eval_e3.select_on_val(seeds, {s: seed_data(1.0) for s in seeds})
+    assert sel["best"] == "ippe+reproj" and sel["chosen"] == "ippe+reproj"
+    assert set(sel["boots_vs_best"]["s0"]) == {"ippe+global", "ippe+reproj", "epnp+reproj"}
+    assert sel["means"]["ippe+global"]["coverage"] == pytest.approx(0.97)
+    # identical distributions: tie in every seed, the simplest (ippe+reproj < ippe+global) is kept, and no
+    # tie is declared for the clearly worse epnp+reproj
+    sel = eval_e3.select_on_val(seeds, {s: seed_data(0.0) for s in seeds})
+    assert sel["chosen"] == "ippe+reproj"
+    # tie broken by flip rate: the simpler combination has 2 points more flips than the best
+    data = {s: seed_data(0.0) for s in seeds}
+    for s in seeds:
+        data[s]["ippe+reproj"] = _fake(0.97, 2.0, flip=0.02, groups=base)
+        data[s]["ippe+global"] = _fake(0.97, 1.99, flip=0.0, groups=base)
+    assert eval_e3.select_on_val(seeds, data)["chosen"] == "ippe+global"
+
+
+def test_select_on_val_no_coverage_is_an_error_not_a_crash():
+    groups = {"t0": [1.0, 2.0]}
+    sel = eval_e3.select_on_val(["s0"], {"s0": {"ippe+global": _fake(0.92, 1.0, groups=groups)}})
+    assert "error" in sel and "0.95" in sel["error"]
