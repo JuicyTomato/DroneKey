@@ -103,3 +103,22 @@ def test_replay_model_drone_changes_pose_not_metric_symmetry(tmp_path):
     got = [(b, w) for b, w in zip(base, wrong) if b["t"] is not None and w["t"] is not None]
     assert got and all(not np.allclose(b["t"], w["t"], atol=1e-3) for b, w in got)
     assert [w["frame_id"] for w in wrong] == [b["frame_id"] for b in base]
+
+
+def test_replay_default_solver_unchanged(tmp_path):
+    recs, models = _two_sequences(tmp_path)
+    _write_kpts(tmp_path / "k.jsonl", recs, sigma=3.0)
+    kpts = load_keypoints(tmp_path / "k.jsonl")
+    for strategy in ("reproj", "global"):
+        base = replay(recs, kpts, models, strategy=strategy)
+        explicit = replay(recs, kpts, models, strategy=strategy, solver="ippe", refine=False)
+        assert explicit == base
+
+
+def test_replay_epnp_one_candidate(tmp_path):
+    recs, models = _two_sequences(tmp_path)
+    _write_kpts(tmp_path / "k.jsonl", recs, sigma=1.0)
+    by_seq = replay(recs, load_keypoints(tmp_path / "k.jsonl"), models, strategy="reproj", solver="epnp")
+    results = [x for rs in by_seq.values() for x in rs]
+    assert any(x["rot_err_deg"] is not None for x in results)
+    assert not any((x["solution_index"] or 0) > 0 for x in results)

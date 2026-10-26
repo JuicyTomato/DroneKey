@@ -4,6 +4,9 @@ import numpy as np
 WORLD_PER_CAMERA = 1.718   # world units per camera unit
 METERS_PER_UNIT = {"01": 0.7463, "02": 0.8053, "03": 0.8525, "04": 0.9334, "05": 0.9253, "06": 0.8521}
 UP_CAM = np.array([0.0, -1.0, 0.0])   # camera y points down
+GRAVITY_FROM_CAMERA = np.array([[1.0, 0.0, 0.0],   # camera -> gravity-aligned frame G (same matrix as forecast/frames.py)
+                                [0.0, 0.0, 1.0],
+                                [0.0, -1.0, 0.0]])
 
 
 def tilt_deg(R: np.ndarray) -> float:

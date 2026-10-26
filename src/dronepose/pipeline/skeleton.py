@@ -12,14 +12,18 @@ from dronepose.eval.metrics import (SYMMETRIC_DRONES, ade, fde, rotation_error_d
 from dronepose.keypoints.predictors import KeypointPredictor
 from dronepose.pose.disambiguation import Choice, disambiguate
 from dronepose.pose.pnp import PnPSolution, solve_ippe
+from dronepose.pose.solvers import solve
 from dronepose.trajectory.baselines import constant_velocity
 
 
 def ippe_candidates(record: dict, kpts: np.ndarray, models: dict[str, DroneModel],
-                    drone: str | None = None) -> list[PnPSolution]:
-    """IPPE candidates; `drone` picks the 3D model (default: the record's true drone)."""
+                    drone: str | None = None, solver: str = "ippe", refine: bool = False) -> list[PnPSolution]:
+    """PnP candidates (default: IPPE, 2 candidates); `drone` picks the 3D model (default: the record's true drone)."""
     try:
-        return solve_ippe(models[drone or record["drone"]].kpts_flu, np.asarray(kpts)[:, :2], np.array(record["K"]))
+        model_pts, img_pts, K = models[drone or record["drone"]].kpts_flu, np.asarray(kpts)[:, :2], np.array(record["K"])
+        if solver == "ippe" and not refine:
+            return solve_ippe(model_pts, img_pts, K)
+        return solve(solver, model_pts, img_pts, K, refine=refine)
     except ValueError:
         return []
 
