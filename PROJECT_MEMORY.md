@@ -582,6 +582,70 @@ Lettura: sulla val siamo vicini al paper (SR90 uguale, AP −0.5/−0.7), sul te
 
 **Stato e prossimi passi.** Codice, test e documentazione (Task 1–9) fatti e committati. Fatti: G2, G4, G6, 2DroneKey `paper`/`code` (val e test). Restano: notebook con G0, G1, G3, G5 (con il codice ee2ac8d: caricamento parallelo); registro, export A val ed `eval_e1.py` sulla scala completa (K5); poi **attesa di O4** (ricetta vincente di YOLO26s): il training finale a 3 semi e il confronto E1 aspettano quella decisione (K6–K9). Il test di 6DroneSyn non si usa qui: arriva con 1.5, insieme a YOLO26s, su decisione dell'utente.
 
+## 6quaterdecies. YOLO26s: chiusura dell'MVP del sotto-progetto A — ricetta, 3 semi, FPS, test (2026-10-20/26)
+
+Spec: `docs/superpowers/specs/2026-10-20-fase1-yolo-pose-mvp-design.md`; piano: `docs/superpowers/plans/2026-10-20-fase1-yolo-pose-mvp.md` (9 task, commit `18efe50`…`aea0859`; passi operativi O1–O9). Capitolo tesi: `PerTesi/13_YOLO26s_MVP_test`. Valutazione unica: `scripts/eval_e1.py` (riproduce esattamente i numeri dei capitoli 8 e 10). Registro dei run: `experiments/registry.jsonl`.
+
+**O4, ricetta (decisione 2026-10-23, val, B con classe GT): vince `w1`.** La ricetta `final` (w1 + riduzione di risoluzione, rumore, JPEG, luminosità/contrasto, p 0.3, nessuna sfocatura) fa 1.80° contro 1.57°, bootstrap [+0.05, +0.46]° (zero escluso: non è un pareggio). Peggiorano anche p90, px e OKS-AP; migliora solo la copertura (97.7% contro 96.4%, quasi tutta sul drone 08, con più flip). `best.pt` = `last.pt` per `w1_yolo26s` (pesi identici). **Per DroneKey (K6–K9) la ricetta delle "stesse carte" è quindi `w1`.** `crop_s_final_s0` conservato per un eventuale controllo sim→reale in E2.
+
+**Semi finali (ricetta `w1`, 3 h, T4):** `w1_yolo26s` (seme 0, cap. 8), `crop_s_w1_s1` (47 epoche), `crop_s_w1_s2` (50 epoche). Avvio lento su Kaggle (~80 min di lettura dei crop dal disco montato) accettato dall'utente senza copia locale. **Prova di ripresa (O3) considerata completata** (decisione dell'utente, 2026-10-26), sulla base di prove indirette: interruzione e ripresa vere di `train_yolo_pose.py --resume-from` in locale su CPU (16 crop, Task 7), e ripresa sul campo di DroneKey G2 su Kaggle (§6terdecies). Non provato: `--resume-from` di Ultralytics su Kaggle. Nessun run YOLO si è interrotto.
+
+**FPS su T4 (O6, batch 1):** C a 640 px 12.1 ms, crop + JPEG 1.1 ms, crop a 256 px 11.7 ms, IPPE 0.2 ms → **B 39.9 FPS**, C 81.2 FPS (lettura del frame e `global` esclusi). File: `experiments/results/fps_t4.json`.
+
+**Test 06–07 usato una sola volta (2026-10-26), media ± dev. std sui 3 semi del crop:**
+
+| | A (box GT) | **B (box di C)** | B, classe predetta | C (1 seme) |
+|---|---|---|---|---|
+| Copertura | 98.7 ± 0.4% | **98.5 ± 0.3%** | 98.5% | 92.7% |
+| Rotazione mediana | 1.22 ± 0.08° | **1.25 ± 0.07°** | 1.44 ± 0.07° | 2.69° |
+| p90 rotazione | 2.87° | **2.92°** | 6.05° | 10.66° |
+| Traslazione (camera / metri stimati) | 0.022 / 0.018 m | **0.030 / 0.026 m** | 0.040 / 0.035 m | 0.033 / 0.027 m |
+| Flip senza 08 | 0% | **0%** | 0.35% | 5.3% |
+| OKS-AP / AP del paper | 0.986 / 0.993 | 0.981 / 0.990 | uguale a B | 0.870 / 0.915 |
+
+Bootstrap appaiato per seme, B contro A: rotazione non distinguibile (intervalli tra [−0.04, +0.05]° e [−0.03, +0.10]°), traslazione peggiore in modo significativo (+0.008–0.009, circa +40%). Con la classe predetta, rotazione peggiore in tutti i semi. Classe di C sul test **67%** (val 82%): 04 32%, 06 35%; è il punto debole della pipeline. Il test è risultato più facile della val (identità del drone 08 al 93% contro il 54%). File: `experiments/results/e1_test.json`, `e1_test_output.txt`, `e1_test_boot_s{1,2}.json`; keypoint in `experiments/results/keypoints/test/`.
+
+**Note operative.** Il venv con ultralytics è `~/.venvs/dronepose-yolo` (Python 3.12): quello nello scratchpad in `/private/tmp` è stato rotto dalla pulizia automatica di macOS. Il disco del Mac è spesso quasi pieno: dagli zip di Kaggle si estraggono solo pesi best/last, `results.csv`, `args.yaml`, `run_info.json` e figure.
+
+**Prossimi passi.** Confronto con DroneKey sul test con lo stesso `eval_e1.py` e bootstrap (quando DroneKey ha i 3 semi con ricetta `w1`); E2 sul reale con R.3. Dopo l'MVP: detector dedicato (classe), seconda passata del crop (traslazione), ablazione della sfocatura, semi di C, checkpoint intermedi, prova di ripresa.
+
+## 6quindecies. Fase 2: E3 (solver × disambiguazione) e archivio degli errori di posa 2.6 (2026-10-26)
+
+Spec: `docs/superpowers/specs/2026-10-26-fase2-e3-archivio-design.md`; piano: `docs/superpowers/plans/2026-10-26-fase2-e3-archivio.md` (6 task, commit `1c6abe6`…`718d5eb`). Codice: `src/dronepose/pose/solvers.py` (IPPE, EPnP, SQPnP, `ITERATIVE`, raffinamento LM), `replay(..., solver, refine)` con default invariati, `src/dronepose/eval/e3.py`, `scripts/eval_e3.py`, `src/dronepose/pose/error_archive.py`, `scripts/export_poses.py`, `scripts/archive_summary.py`. Messaggio per la Fase 3: `docs/superpowers/handoff/2026-10-26-archivio-errori-per-fase3.md`. Capitolo tesi: `PerTesi/14_E3_solver_e_archivio_errori`.
+
+**Domanda (dell'utente):** quale solver PnP e quale disambiguazione danno la posa migliore dai keypoint predetti, con classe oracle e predetta. Griglia di 64 combinazioni per seme (4 solver × LM sì/no × 4 strategie × classe), keypoint B di YOLO26s, 3 semi. Scelta sulla val con la regola dell'utente (copertura ≥ 95%, rotazione mediana, pareggio nel bootstrap in tutti i semi → la più semplice). **Aggiunta dell'utente (2026-10-26):** nel pareggio la più semplice vince solo se il suo flip senza 08 non supera quello della migliore di più di 0.5 punti, perché la mediana non vede i flip. Test riportato una volta, senza scelte (decisione dell'utente).
+
+**Scelta (val, classe predetta): IPPE + raffinamento LM + `global`.**
+
+| | Val, classe predetta | Test, classe predetta | Test, classe vera |
+|---|---|---|---|
+| **IPPE + LM + `global`** | 1.585 ± 0.034°, 97.4%, flip 0.2% | **1.33 ± 0.06°**, 99.1%, p90 5.6° | **1.17 ± 0.06°**, flip 0% |
+| IPPE + `global` (prima) | 1.651°, 96.5% | 1.44°, 98.5% | 1.25° |
+| SQPnP + `global` | 1.572°, **94.3%**, flip 2.6% (escluso) | 1.32°, flip 4.0% | 1.16° |
+| `ITERATIVE` + `reproj` (setup degli autori) | 1.675°, p90 21.8°, flip 6.4% | 1.39°, p90 32° | 1.20° |
+| EPnP + `reproj` | 30.4°, flip 50% | 25.9°, flip 47% | 22.7° |
+
+- **LM contro senza LM:** bootstrap contro IPPE + `global` [−0.15, −0.03]°, [−0.20, −0.004]°, [−0.11, +0.09]° sulla val; sul test lo zero è escluso in tutti e tre i semi. La traslazione non cambia.
+- **La disambiguazione conta più del solver:** senza `global` tutti i solver hanno p90 tra 15° e 22° e il 5–6% di flip sulla val. I solver a una soluzione (SQPnP, `ITERATIVE`) restano al 2.6–4.4% di flip anche con `global`, IPPE allo 0.2%.
+- **EPnP fallisce** sui 4 punti quasi complanari delle eliche, già con keypoint esatti (26–38°): è coerente con i 60–108° del baseline PnP di DroneKey++.
+- **Tempi del solver:** 0.07–0.12 ms per frame (CPU, M1).
+- **Errore per asse della scelta (val):** yaw 1.56°, pitch 0.94°, roll 1.66°.
+
+**Confronto con DroneKey++ (2.5, test, classe predetta, MAE / MedAE):** noi 3.36 / 1.33° e 0.163 / 0.040 unità camera (0.280 / 0.069 world); `ITERATIVE` + `reproj` 15.9 / 1.39°; DroneKey++ 17.34 / 17.10° e 0.135 / 0.242 m; il loro YOLOv8 + PnP 79.25 / 87.55°. Avvertenze: la loro GT di rotazione è probabilmente affetta dal bug degli Euler (§3.10), l'unità della traslazione è incerta, la loro MAE di t è minore della MedAE. Lettura: senza disambiguazione la media esplode, la mediana no.
+
+**Archivio 2.6** (`experiments/pose_errors/archive_val_s{0,1,2}.jsonl`, val, pipeline realistica, 3 semi; convenzioni di `noise.py`: `dp_g = G·(t_stima − t_GT)·s_c` in metri nel frame della gravità, `dR = R_GTᵀ·R_stima` nel frame del corpo; drone 08 in unità del dataset con `meters: false`; frame senza posa tenuti con `valid: false`). Droni 01–06: posa nel 98.8% dei frame, flip 0.2%, errore di posizione 3.4 cm (p90 25 cm), rotazione 1.55° (p90 4.5°). L'errore è **quasi tutto lungo la linea di vista** (~22 volte il laterale), costante fino a 3 m e circa doppio oltre. È **correlato nel tempo**: autocorrelazione della posizione 0.81 / 0.43 / 0.15 / ~0 a 1 / 5 / 15 / 30 frame, della rotazione 0.78 / 0.21 / ~0 a 1 / 5 / 15, centrata per tratto. Prima della correzione era centrata sulla media globale, che gonfiava la persistenza. **Rischio di fuga di informazione:** l'archivio viene dalla val, quindi non va usato come rumore di training se poi si valuta sulla val del 6DroneSyn (soluzioni nel messaggio alla Fase 3). Pose per E4b: `experiments/poses/poses_{val,test}_s{N}_{causal,gt}.jsonl`.
+
+**Limiti:**
+- SQPnP tiene solo la soluzione migliore;
+- nessun filtro di profondità sulle pose dei solver;
+- parametri di `global` non ritarati per YOLO26;
+- il test è guardato una seconda volta, solo per riporto;
+- gli errori di Eulero includono il drone 08, che ha lo yaw ambiguo.
+
+**Trappola:** la shell è zsh, quindi gli array partono da 1. Un ciclo `${VAL[$s]}` ha scambiato i semi nel primo export di val, rifatto con percorsi espliciti.
+
+**Prossimi passi:** la Fase 3 rifà D2 e fa E4b con archivio e pose; la pipeline E1 e il video si possono aggiornare a IPPE + LM + `global` (oggi i numeri E1 del §6quaterdecies sono con IPPE + `global`).
+
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
 - **Precisazione 2026-10-08 (chiarita con l'utente):** il PnP a runtime **non scopre** la dimensione del drone: riceve il modello 3D (distanze tra rotori) come input fisso e ne ricava `t`. Un drone in scala 1:2 a metà distanza dà gli stessi pixel → la distanza assoluta richiede **classe nota + dimensioni vere**; classe ignota = solo direzione e forma della traiettoria. In **fase 2 sul sintetico** si usa il modello ricavato dal dataset (`flu_model.py`): `t` esce già nelle unità della GT, nessun errore di scala. L'errore "34 vs 28 cm" (PnP compensa con la distanza, fattore 28/34) nasce solo se il modello PnP ha scala diversa da quella di rendering: sintetico con specifiche DJI al posto del modello dati (**da non fare**) oppure reale con specifiche sbagliate. La conversione in metri è solo una moltiplicazione per classe, applicata quando servono metri veri (fase 3, reale).
