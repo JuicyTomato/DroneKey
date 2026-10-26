@@ -40,6 +40,7 @@ def header(combo: str, seed: int, commit: str) -> dict:
                         "rotvec_deg": "rotation vector of dR in degrees", "G": GRAVITY_FROM_CAMERA.tolist()},
         "units": {"dp_g": "meters (gravity frame); dataset units when meters is false",
                   "distance_m": "meters; dataset units when meters is false",
+                  "los_g": "unit vector from camera to drone (G @ t_gt / |t_gt|), gravity frame",
                   "rotation": "degrees"},
     }
 
@@ -59,13 +60,16 @@ def archive_rows(results: list[dict], records_by_id: dict[str, dict],
         s_c = METERS_PER_UNIT.get(drone)
         meters = s_c is not None
         scale = s_c if meters else 1.0
-        distance = float(np.linalg.norm(np.asarray(rec["t_gt"], float)) * scale)
+        t_gt = np.asarray(rec["t_gt"], float)
+        distance = float(np.linalg.norm(t_gt) * scale)
+        los_g = GRAVITY_FROM_CAMERA @ t_gt / np.linalg.norm(t_gt)      # unit line of sight, gravity frame
         row = {"frame_id": fid, "sequence": sequence_key(fid), "frame_idx": int(res["frame_idx"]),
                "scene": rec["scene"], "drone": drone,
                "drone_model": model_drone[fid] if model_drone else drone, "seed": seed,
                "valid": False, "reason": res.get("reject_reason"), "dp_g": None, "meters": meters,
                "dR": None, "rotvec_deg": None, "rot_err_deg": None, "flip": False,
-               "symmetric": drone in SYMMETRIC_DRONES, "distance_m": distance}
+               "symmetric": drone in SYMMETRIC_DRONES, "distance_m": distance,
+               "los_g": [float(v) for v in los_g]}
         if res.get("rejected") or res.get("R") is None or res.get("t") is None:
             if row["reason"] is None:
                 row["reason"] = "no_pose"
@@ -73,7 +77,7 @@ def archive_rows(results: list[dict], records_by_id: dict[str, dict],
             row["reason"] = "non_finite"
         else:
             R_est, t_est = np.asarray(res["R"], float), np.asarray(res["t"], float)
-            dp = GRAVITY_FROM_CAMERA @ (t_est - np.asarray(rec["t_gt"], float)) * scale
+            dp = GRAVITY_FROM_CAMERA @ (t_est - t_gt) * scale
             dR = np.asarray(rec["R_gt"], float).T @ R_est
             rot_err = res.get("rot_err_deg")
             row.update(valid=True, reason=None, dp_g=[float(v) for v in dp],
