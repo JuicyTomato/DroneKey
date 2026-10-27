@@ -134,3 +134,11 @@ def pipeline_errors(trajs, pose_paths: list[Path], cfg: ForecastConfig, params_f
                 idx_parts.append(ws.meta["gt_index"])
     rot = {k: {m: np.concatenate([p[k][m] for p in rot_parts]) for m in ("geodesic", "up")} for k in rot_parts[0]}
     return concat_errors(err_parts), rot, np.concatenate(idx_parts), info
+
+
+def guard_test_run(allow_test: bool, out_dir: Path) -> None:
+    """The test (scenes 06, 07) is used once, at the end, with the choices fixed on the val (spec 2026-10-27 §5.6)."""
+    if not allow_test:
+        raise ValueError("the test split (scenes 06, 07) is used once, at the end: pass --allow-test explicitly")
+    if Path(out_dir).exists():
+        raise ValueError(f"{out_dir} exists: il test si usa una volta sola (nessuna seconda esecuzione)")
