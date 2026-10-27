@@ -136,9 +136,31 @@ def pipeline_errors(trajs, pose_paths: list[Path], cfg: ForecastConfig, params_f
     return concat_errors(err_parts), rot, np.concatenate(idx_parts), info
 
 
-def guard_test_run(allow_test: bool, out_dir: Path) -> None:
-    """The test (scenes 06, 07) is used once, at the end, with the choices fixed on the val (spec 2026-10-27 §5.6)."""
+TEST_OUT = Path("experiments/forecast/e4/test")
+
+
+def guard_test_run(allow_test: bool, out_dir: Path, smoke: bool = False) -> None:
+    """The test (scenes 06, 07) is used once, at the end, with the choices fixed on the val (spec 2026-10-27 §5.6).
+    smoke (the same code on the val): never into the real test directory, which it would block."""
+    if smoke:
+        if Path(out_dir).resolve() == TEST_OUT.resolve():
+            raise ValueError("smoke run on the val: pass an --out outside experiments/forecast/e4/test")
+        allow_test = True
     if not allow_test:
         raise ValueError("the test split (scenes 06, 07) is used once, at the end: pass --allow-test explicitly")
     if Path(out_dir).exists():
         raise ValueError(f"{out_dir} exists: il test si usa una volta sola (nessuna seconda esecuzione)")
+
+
+def t3_e4a_key(method: str) -> str:
+    """E4a counterpart of an E4b method for T3: the line-of-sight Kalman exists only with estimated poses (its
+    anisotropy has no meaning on noise-free poses), so it is paired with the Kalman CA of E4a."""
+    return "kf_ca" if method == "kf_ca_los" else method
+
+
+def validate_choices(pick: dict, e4a_methods, e4b_methods) -> None:
+    """Before the single test run: the methods chosen on the val must exist in E4a / E4b (and T3 must be defined)."""
+    if pick["E4a"] not in e4a_methods:
+        raise ValueError(f"E4a choice {pick['E4a']!r} is not an E4a method {tuple(e4a_methods)}")
+    if pick["E4b"] not in e4b_methods or t3_e4a_key(pick["E4b"]) not in e4a_methods:
+        raise ValueError(f"E4b choice {pick['E4b']!r} is not an E4b method or has no E4a counterpart")

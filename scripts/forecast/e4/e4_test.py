@@ -40,13 +40,14 @@ def main():
     args = ap.parse_args()
     split = "val" if args.smoke_val else "test"
     try:
-        guard_test_run(args.allow_test or args.smoke_val, Path(args.out))   # before reading anything of the test
+        guard_test_run(args.allow_test, Path(args.out), smoke=args.smoke_val)   # before reading anything of the test
     except ValueError as e:
         sys.exit(f"e4_test.py: {e}")
 
     from dronepose.forecast.config import load_config
     from dronepose.forecast.dataset import load_trajectories
-    from dronepose.forecast.e4_eval import REFERENCE, degradation, method_errors, pipeline_errors, summarize_e4
+    from dronepose.forecast.e4_eval import (BASELINES, REFERENCE, degradation, method_errors, pipeline_errors,
+                                            summarize_e4, t3_e4a_key, validate_choices)
     from dronepose.forecast.nets.device import pick_device
     from dronepose.forecast.windows import make_windows
     from e4_train import ARMS, e4_run_name
@@ -57,6 +58,7 @@ def main():
     pick = {"E4a": chosen["E4a"]["chosen"], "E4b": chosen["E4b"]["chosen"]}
     runs, pdir = Path(args.runs), Path(args.params)
     nets = lambda set_name: {arm: [runs / e4_run_name(arm, set_name, s) for s in SEEDS] for arm in ARMS}
+    validate_choices(pick, BASELINES + tuple(ARMS), BASELINES + tuple(ARMS) + ("kf_ca_los",))
     out = Path(args.out)
     out.mkdir(parents=True)                                   # marks the single use from here on
 
@@ -72,12 +74,15 @@ def main():
         wb = gt.subset(idx)
         res[f"E4b_{cls}"] = {"summary": summarize_e4(err_b, rot_b, wb, cfg, b), "counts": info,
                              "degradation_vs_E4a": degradation(err_b, {k: v[idx] for k, v in err_a.items()}, wb, b)}
+        t3 = {pick["E4b"]: err_b[pick["E4b"]]}
+        res[f"E4b_{cls}"]["degradation_T3"] = degradation(t3, {pick["E4b"]: err_a[t3_e4a_key(pick["E4b"])][idx]}, wb, b)
     top = lambda key, m: next(g for g in res[key]["summary"]["groups"] if g["group"] == "metri: tutti")[
         "skill_vs_CV-2"][m]["ade_1s"]
     res["criteria"] = {
         "T1": {"method": pick["E4a"], "skill_ade_1s_vs_CV-2": top("E4a", pick["E4a"])},
         "T2": {"method": pick["E4b"], "skill_ade_1s_vs_CV-2": top("E4b_causal", pick["E4b"])},
-        "T3": {"method": pick["E4b"], **res["E4b_causal"]["degradation_vs_E4a"][pick["E4b"]]}}
+        "T3": {"method": pick["E4b"], "e4a_counterpart": t3_e4a_key(pick["E4b"]),
+               **res["E4b_causal"]["degradation_T3"][pick["E4b"]]}}
     res["seconds"] = time.time() - t0
     (out / "results.json").write_text(json.dumps(res, indent=1, default=float))
     (out / "criteria.json").write_text(json.dumps(res["criteria"], indent=1))
