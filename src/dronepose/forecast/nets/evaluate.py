@@ -36,7 +36,7 @@ def refuse_test_split(name: str) -> None:
 def predict_run(run_dir: Path, batch: Batch, device, return_w: bool = False):
     """Predictions in metres (frame of the batch) of the best checkpoint of a run; with return_w also R-F-P's w."""
     ck = load_checkpoint(Path(run_dir) / "best.pt")
-    model = build_model(ck["arm"], ck["cfg"], ck["rnn"], ck["use_mode"]).to(device)
+    model = build_model(ck["arm"], ck["cfg"], ck["rnn"], ck["use_mode"], ck.get("n_in", 9)).to(device)
     model.load_state_dict(ck["model"])
     model.eval()
     norm = Normaliser.from_json(ck["normaliser"])

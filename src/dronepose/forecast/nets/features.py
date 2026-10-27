@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from dronepose.forecast.archive_noise import Tracts, apply_tracts, archive_noise_rng, sample_tracts, yaw_angles
 from dronepose.forecast.config import ForecastConfig
 from dronepose.forecast.gaps import acro_g, cv_g, kalman_g
 from dronepose.forecast.noise import add_pose_noise_per_window, noise_rng, sample_mixture_sigmas
@@ -24,7 +25,7 @@ _HORIZ = np.array([0, 1, 3, 4, 6, 7])          # x, y of position, velocity and 
 
 @dataclass
 class Batch:
-    x: np.ndarray               # (W,N,9) position rel. to the last observation, velocity, up axis u
+    x: np.ndarray               # (W,N,9) position rel. to the last observation, velocity, up axis u (+ mask: 10)
     bases: dict                 # name -> (W,H,3), same origin as x
     target: np.ndarray          # (W,H,3) future positions, same origin
     weight: np.ndarray          # (W,) importance weight (1 without meta)
@@ -71,14 +72,31 @@ def _onehot(values, names) -> np.ndarray:
     return out
 
 
-def build_batch(windows: Windows, params: dict, cfg: ForecastConfig) -> Batch:
+def fill_lost(obs_valid: np.ndarray) -> np.ndarray:
+    """(W,N) frame index used for every observed frame: itself when valid, else the last valid one before it (the
+    first valid one before any)."""
+    v = np.asarray(obs_valid, bool)
+    idx = np.maximum.accumulate(np.where(v, np.arange(v.shape[1])[None], -1), axis=1)
+    return np.where(idx < 0, np.argmax(v, axis=1)[:, None], idx)
+
+
+def build_batch(windows: Windows, params: dict, cfg: ForecastConfig, mask_channel: bool = False) -> Batch:
+    """Features of the windows; with obs_valid (spec 2026-10-27 §5.2) lost frames take the last valid pose, the
+    anchor is the last VALID observation and mask_channel appends obs_valid as a 10th channel."""
     w = windows
     W = len(w)
-    anchor = np.asarray(w.obs_p, float)[:, -1:, :]                         # (W,1,3)
-    pos = w.obs_p - anchor
-    vel = np.diff(w.obs_p, axis=1) * cfg.fps
+    obs_p, obs_u = np.asarray(w.obs_p, float), np.asarray(w.obs_u, float)
+    if w.obs_valid is not None and not np.asarray(w.obs_valid, bool).all():
+        fi = fill_lost(w.obs_valid)[..., None]
+        obs_p, obs_u = np.take_along_axis(obs_p, fi, 1), np.take_along_axis(obs_u, fi, 1)
+    anchor = obs_p[:, -1:, :]                                              # (W,1,3)
+    pos = obs_p - anchor
+    vel = np.diff(obs_p, axis=1) * cfg.fps
     vel = np.concatenate([vel[:, :1], vel], axis=1)                       # first frame: the first difference
-    x = np.concatenate([pos, vel, np.asarray(w.obs_u, float)], axis=-1)
+    x = np.concatenate([pos, vel, obs_u], axis=-1)
+    if mask_channel:
+        valid = np.ones(x.shape[:2]) if w.obs_valid is None else np.asarray(w.obs_valid, float)
+        x = np.concatenate([x, valid[..., None]], axis=-1)
     bases = {k: (v - anchor).astype(np.float32) for k, v in base_predictions(w, params, cfg).items()}
     meta = w.meta
     return Batch(x=x.astype(np.float32), bases=bases, target=(w.fut_p - anchor).astype(np.float32),
@@ -99,11 +117,12 @@ class Normaliser:
 
     @classmethod
     def fit(cls, batch: Batch) -> "Normaliser":
-        x = batch.x.reshape(-1, 9).astype(np.float64)
+        x = batch.x.reshape(-1, batch.x.shape[-1]).astype(np.float64)
         mean, std = x.mean(0), x.std(0)
         for c in (0, 3, 6):
             mean[c:c + 2] = 0
             std[c:c + 2] = np.sqrt(np.mean(x[:, c:c + 2] ** 2))
+        mean[9:], std[9:] = 0, 1                                           # the mask channel stays 0 / 1
         return cls(x_mean=mean, x_std=np.maximum(std, 1e-6),
                    pos_scale=float(max(np.sqrt(np.mean(batch.target.astype(np.float64) ** 2)), 1e-6)))
 
@@ -126,7 +145,7 @@ def rotate_yaw(batch: Batch, angles) -> Batch:
     """Rotate about e3 (one angle per window) positions, velocities, up axis, bases and target."""
     Rz = Rotation.from_euler("z", np.asarray(angles, float)[:, None]).as_matrix().astype(np.float32)   # (W,3,3)
     rot = lambda p: np.einsum("wij,w...j->w...i", Rz, p).astype(np.float32)
-    x = np.concatenate([rot(batch.x[..., c:c + 3]) for c in (0, 3, 6)], axis=-1)
+    x = np.concatenate([rot(batch.x[..., c:c + 3]) for c in (0, 3, 6)] + [batch.x[..., 9:]], axis=-1)
     return replace(batch, x=x, bases={k: rot(v) for k, v in batch.bases.items()}, target=rot(batch.target))
 
 
@@ -142,6 +161,25 @@ def noisy_copy(windows: Windows, params_noisy: dict, cfg: ForecastConfig, seed: 
     rng = noise_rng(seed, 0, salt=k)
     sp, sr = sample_mixture_sigmas(len(windows), rng, max_p_cm, max_r_deg)
     return build_batch(add_pose_noise_per_window(windows, sp, sr, rng), params_noisy, cfg)
+
+
+def archive_copy(windows: Windows, params: dict, cfg: ForecastConfig, tracts: Tracts, seed: int, k: int,
+                 distance_cond: bool) -> Batch:
+    """Copy k of an archive pool (spec 2026-10-27 §5.1): one real-error tract per window, stream
+    archive_noise_rng(seed, k). distance_cond (6DroneSyn, camera at the origin): tract from the same distance band
+    as the last observation, line of sight aligned in azimuth; else (generated) uniform tract and uniform yaw. Only
+    tracts with at least 2 valid frames (windows with fewer are excluded from every evaluation)."""
+    tr = tracts.take(tracts.valid.sum(1) >= 2)
+    rng = archive_noise_rng(seed, k)
+    dist = np.linalg.norm(windows.last_p, axis=1) if distance_cond else None
+    idx, _ = sample_tracts(tr, len(windows), rng, distance=dist)
+    yaw = yaw_angles(tr, idx, rng, target_los=windows.last_p / dist[:, None] if distance_cond else None)
+    return build_batch(apply_tracts(windows, tr, idx, yaw), params, cfg, mask_channel=True)
+
+
+def build_archive_pool(windows: Windows, params: dict, cfg: ForecastConfig, tracts: Tracts, K: int, seed: int,
+                       distance_cond: bool) -> list[Batch]:
+    return [archive_copy(windows, params, cfg, tracts, seed, k, distance_cond) for k in range(K)]
 
 
 def save_pool(pool: list[Batch], path: Path) -> None:
