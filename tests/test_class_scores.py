@@ -1,0 +1,63 @@
+import numpy as np
+import pytest
+
+from dronepose.keypoints.class_scores import combine, fuse_causal, log_scores, scores_c1
+from dronepose.keypoints.detections import Detection, class_causal_vote
+
+
+def _seq(classes, seq="03_01_05_090", confs=None):
+    recs = [{"frame_id": f"{seq}_{i + 1:04d}", "frame_idx": i + 1, "drone": "01"} for i in range(len(classes))]
+    confs = confs or [0.9] * len(classes)
+    dets = {r["frame_id"]: Detection((0.0, 0.0, 1.0, 1.0), k, c)
+            for r, c, k in zip(recs, classes, confs) if c is not None}
+    return recs, dets
+
+
+def _vals(out, recs):
+    return [out[r["frame_id"]] for r in recs]
+
+
+def test_sum_of_unweighted_c1_equals_majority_vote():
+    recs, dets = _seq(["03", "06", "06", "03", None, "06"])
+    assert fuse_causal(recs, scores_c1(dets, weighted=False), "S") == class_causal_vote(recs, dets)
+
+
+def test_sum_of_unweighted_c1_equals_majority_vote_on_ties_and_gaps():
+    recs, dets = _seq([None, "05", "03", "03", "05", None, "02"])
+    assert fuse_causal(recs, scores_c1(dets, weighted=False), "S") == class_causal_vote(recs, dets)
+
+
+def test_weighted_c1_uses_confidence():
+    recs, dets = _seq(["03", "06", "06"], confs=[0.9, 0.3, 0.3])
+    assert _vals(fuse_causal(recs, scores_c1(dets, weighted=True), "S"), recs) == ["03", "03", "03"]
+
+
+def test_frame_rule_holds_last_class_and_backfills_start():
+    recs, dets = _seq([None, "05", None, "03"])
+    assert _vals(fuse_causal(recs, scores_c1(dets, False), "F"), recs) == ["05", "05", "05", "03"]
+
+
+def test_sequence_without_scores_raises():
+    recs, _ = _seq([None, None])
+    with pytest.raises(ValueError, match="03_01_05_090"):
+        fuse_causal(recs, {}, "S")
+
+
+def test_unknown_temporal_rule_raises():
+    recs, dets = _seq(["03"])
+    with pytest.raises(ValueError, match="temporal"):
+        fuse_causal(recs, scores_c1(dets, False), "V")
+
+
+def test_log_sum_ties_go_to_first_seen():
+    # log scores: both frames equal on 03/06 after two frames -> 03 (first argmax seen) wins
+    recs = [{"frame_id": f"03_01_05_090_{i:04d}", "frame_idx": i, "drone": "01"} for i in (1, 2)]
+    s = {recs[0]["frame_id"]: {"03": -1.0, "06": -2.0}, recs[1]["frame_id"]: {"03": -2.0, "06": -1.0}}
+    assert _vals(fuse_causal(recs, s, "S"), recs) == ["03", "03"]
+
+
+def test_combine_and_log():
+    s = combine([({"f": {"03": 1.0}}, 2.0), ({"f": {"06": 1.0}, "g": {"01": 1.0}}, 1.0)])
+    assert s == {"f": {"03": 2.0, "06": 1.0}, "g": {"01": 1.0}}
+    lg = log_scores({"f": {"03": 1.0}}, 0.1)
+    assert lg["f"]["06"] == pytest.approx(np.log(0.1)) and lg["f"]["03"] == 0.0 and len(lg["f"]) == 7
