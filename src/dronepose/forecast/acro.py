@@ -68,6 +68,11 @@ def _level0(B: int, k_d: np.ndarray) -> QuadParams:
 
 def acro_predict(obs_t, obs_p, obs_R, fut_t, k: int, lam, thrust, kd_mode) -> np.ndarray:
     est = estimate_state(obs_t, obs_p, obs_R, k, kd_mode, lam)
+    return acro_rollout(est, fut_t, lam, thrust, obs_t[-1])
+
+
+def acro_rollout(est: dict, fut_t, lam, thrust, t_last: float) -> np.ndarray:
+    """Integrate the estimated states (estimate_state) to the future times; t_last = time of the last observation."""
     W = len(est["c"])
     lam = np.broadcast_to(np.asarray(lam, float), (W,))
     hold = np.broadcast_to(np.asarray(thrust) == "hold_vz", (W,))
@@ -80,7 +85,7 @@ def acro_predict(obs_t, obs_p, obs_R, fut_t, k: int, lam, thrust, kd_mode) -> np
     prm = _level0(W, est["k_d"])
     s = QuadState(p=est["p0"].copy(), v=est["v0"].copy(), R=R0.copy(), omega=est["omega"].copy(), c=est["c"].copy())
     out = np.empty((W, len(fut_t), 3))
-    t, t_prev = 0.0, obs_t[-1]
+    t, t_prev = 0.0, t_last
     for j, tf in enumerate(np.asarray(fut_t, float)):
         for _ in range(int(round((tf - t_prev) / DT))):
             w_b = np.einsum("wji,wj->wi", s.R, w_vert + w_h0 * np.exp(-lam * t)[:, None])

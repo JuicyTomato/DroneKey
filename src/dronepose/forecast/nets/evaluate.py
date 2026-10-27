@@ -23,6 +23,10 @@ DEFINITIONS = {
           "anisotropo, con flip)",
     "D3": "fuori dominio: val del 6DroneSyn, droni 01-06 (finestre in metri), zero-shot: R-F contro CV-2, skill ADE a "
           "1 s ≥ 0 (IC riportato). Atteso dichiarato in anticipo: probabile fallimento (la fisica parte da −390%)",
+    "D2b": "rumore reale (spec 2026-10-27 §6): R-F allenato con l'archivio degli errori contro F ritarato con lo stesso "
+           "rumore, val generata L1 pesata, leave-one-scene-out sulle scene 03 / 09 / 14 dell'archivio: skill ADE a 1 s "
+           "> 0 con IC 95% che esclude lo zero sul totale (per campione media dei 3 fold, un solo bootstrap, strati = "
+           "modo) e stima puntuale > 0 in ciascun fold",
     "D4": "contributi: val generata: R-F batte G e batte R-CV (due skill ADE a 1 s > 0 con IC che esclude lo zero)",
 }
 
@@ -121,3 +125,17 @@ def criterion_d4(rf_seed_errs, g_seed_errs, rcv_seed_errs, weight, traj, strata,
         out[name] = {"value": v[0], "ci": v[1:], "pass": bool(v[0] > 0 and v[1] > 0)}
     return {"definition": DEFINITIONS["D4"], "contrasts": out, "value": None, "ci": [None, None], "per_seed": None,
             "pass": bool(all(v["pass"] for v in out.values()))}
+
+
+def criterion_d2b(per_fold_rf: dict, per_fold_f: dict, weight, traj, strata, b: int = 10000, seed: int = 0) -> dict:
+    """per_fold_rf: held-out scene -> R-F error per net seed (each averaged over the noise draws); per_fold_f: scene ->
+    F error averaged likewise. Total: per sample the mean over the folds; one bootstrap (paired, strata = mode)."""
+    counts = bootstrap_counts(traj, strata, b, seed)
+    folds = {s: contrast(per_fold_rf[s], per_fold_f[s], weight, traj, strata, b, seed, counts)
+             for s in sorted(per_fold_f)}
+    n_seeds = len(next(iter(per_fold_rf.values())))
+    rf_tot = [np.mean([per_fold_rf[s][i] for s in folds], 0) for i in range(n_seeds)]
+    f_tot = np.mean([per_fold_f[s] for s in folds], 0)
+    c = contrast(rf_tot, f_tot, weight, traj, strata, b, seed, counts)
+    ok = c["value"] > 0 and c["ci"][0] > 0 and all(v["value"] > 0 for v in folds.values())
+    return {"definition": DEFINITIONS["D2b"], **c, "folds": folds, "pass": bool(ok)}

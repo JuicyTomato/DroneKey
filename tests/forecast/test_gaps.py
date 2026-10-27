@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from dronepose.forecast.baselines import ca, cv
-from dronepose.forecast.gaps import drop_sparse, last_valid_index, predict_gapped
+from dronepose.forecast.acro import acro_predict
+from dronepose.forecast.gaps import (acro_g, ca_g, cv_g, drop_sparse, last_k_valid, last_valid_index, predict_gapped,
+                                     restrict_frames)
 from dronepose.forecast.kalman import kalman_predict
 from dronepose.forecast.tuning import predict_all, tune
 from tests.forecast.test_tuning import CFG, _traj, _windows
@@ -115,3 +117,44 @@ def test_tune_with_gaps_runs():
     w = _lost(_windows([_traj(chaos=True), _traj(chaos=True, seed=3)]), [5, -1])
     p = tune(w, CFG)
     assert p["cv_k"] in CFG.cv_k_grid and np.isfinite(p["scores"]["kf_ca"])
+
+
+def _random_mask(w, p_lost=0.15, seed=0):
+    v = np.random.default_rng(seed).random(w.obs_p.shape[:2]) > p_lost
+    v[:, -3:] |= np.random.default_rng(seed + 1).random((len(w), 3)) > 0.5   # keep >= a few valid frames
+    v[:, -1] |= ~v[:, :-1].any(1)
+    v[v.sum(1) < 3, -3:] = True
+    return dataclasses.replace(w, obs_valid=v)
+
+
+def _per_pattern(w, fn):
+    """Reference: one call per full pattern of valid frames, no last-k grouping, no batched rollout."""
+    out = np.empty(w.fut_p.shape)
+    pats, inv = np.unique(w.obs_valid, axis=0, return_inverse=True)
+    for j, pat in enumerate(pats):
+        sel = np.flatnonzero(inv.reshape(-1) == j)
+        out[sel] = fn(restrict_frames(w.subset(sel), pat))
+    return out
+
+
+def test_acro_g_matches_per_pattern_reference():
+    w = _random_mask(_windows([_traj(chaos=True, seed=s) for s in range(4)]))
+    got = acro_g(w, 5, 8.0, "hold_vz", "estimate")
+    ref = _per_pattern(w, lambda s: acro_predict(s.obs_t, s.obs_p, np.asarray(s.obs_R, float), s.fut_t,
+                                                 min(5, len(s.obs_t)), 8.0, "hold_vz", "estimate"))
+    np.testing.assert_allclose(got, ref, atol=1e-10)
+
+
+def test_last_k_grouping_matches_full_patterns():
+    w = _random_mask(_windows([_traj(chaos=True, seed=s) for s in range(4)]), seed=3)
+    for k in (2, 3, 5):
+        np.testing.assert_allclose(cv_g(w, k), _per_pattern(w, lambda s: cv(s.obs_t, s.obs_p, s.fut_t,
+                                                                            min(k, len(s.obs_t)))), atol=1e-12)
+    np.testing.assert_allclose(ca_g(w, 5), _per_pattern(w, lambda s: ca(s.obs_t, s.obs_p, s.fut_t,
+                                                                        min(5, len(s.obs_t)))), atol=1e-12)
+
+
+def test_last_k_valid():
+    v = np.array([[True, False, True, True, False, True]])
+    np.testing.assert_array_equal(last_k_valid(v, 2), [[False, False, False, True, False, True]])
+    np.testing.assert_array_equal(last_k_valid(v, None), v)

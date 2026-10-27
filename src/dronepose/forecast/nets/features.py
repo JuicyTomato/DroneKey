@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from dronepose.forecast.archive_noise import Tracts, apply_tracts, archive_noise_rng, sample_tracts, yaw_angles
+from dronepose.forecast.archive_noise import Tracts, archive_noise_rng, noisy_windows
 from dronepose.forecast.config import ForecastConfig
 from dronepose.forecast.gaps import acro_g, cv_g, kalman_g
 from dronepose.forecast.noise import add_pose_noise_per_window, noise_rng, sample_mixture_sigmas
@@ -169,12 +169,8 @@ def archive_copy(windows: Windows, params: dict, cfg: ForecastConfig, tracts: Tr
     archive_noise_rng(seed, k). distance_cond (6DroneSyn, camera at the origin): tract from the same distance band
     as the last observation, line of sight aligned in azimuth; else (generated) uniform tract and uniform yaw. Only
     tracts with at least 2 valid frames (windows with fewer are excluded from every evaluation)."""
-    tr = tracts.take(tracts.valid.sum(1) >= 2)
-    rng = archive_noise_rng(seed, k)
-    dist = np.linalg.norm(windows.last_p, axis=1) if distance_cond else None
-    idx, _ = sample_tracts(tr, len(windows), rng, distance=dist)
-    yaw = yaw_angles(tr, idx, rng, target_los=windows.last_p / dist[:, None] if distance_cond else None)
-    return build_batch(apply_tracts(windows, tr, idx, yaw), params, cfg, mask_channel=True)
+    return build_batch(noisy_windows(windows, tracts, archive_noise_rng(seed, k), distance_cond), params, cfg,
+                       mask_channel=True)
 
 
 def build_archive_pool(windows: Windows, params: dict, cfg: ForecastConfig, tracts: Tracts, K: int, seed: int,

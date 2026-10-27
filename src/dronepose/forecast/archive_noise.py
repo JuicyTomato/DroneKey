@@ -48,6 +48,18 @@ class Tracts:
         return self.take(np.isin(self.scene, list(scenes)) & (self.meters == meters))
 
 
+ARCHIVE_SCENES = ("03", "09", "14")
+ARCHIVE_PATHS = tuple(Path(f"experiments/pose_errors/archive_val_s{s}.jsonl") for s in range(3))
+
+
+def fold_train(held_out: str | None) -> tuple[str, ...]:
+    """Archive scenes allowed for training / tuning / early stopping when `held_out` is judged (None: the final
+    models, all three scenes)."""
+    if held_out is not None and held_out not in ARCHIVE_SCENES:
+        raise ValueError(f"unknown archive scene {held_out!r}")
+    return tuple(s for s in ARCHIVE_SCENES if s != held_out)
+
+
 def archive_noise_rng(seed: int, *salt: int) -> np.random.Generator:
     return np.random.default_rng([seed, 2026, *salt])
 
@@ -157,3 +169,18 @@ def apply_tracts(windows: Windows, tracts: Tracts, idx: np.ndarray, yaw: np.ndar
     obs_R = np.asarray(w.obs_R, float) @ tracts.dR[idx]
     valid = tracts.valid[idx] if w.obs_valid is None else tracts.valid[idx] & np.asarray(w.obs_valid, bool)
     return replace(w, obs_p=w.obs_p + dp, obs_R=obs_R, obs_u=obs_R[..., :, 2], obs_valid=valid)
+
+
+def usable(tracts: Tracts, min_valid: int = 2) -> Tracts:
+    """Tracts with at least `min_valid` valid frames (windows with fewer are excluded from every evaluation)."""
+    return tracts.take(tracts.valid.sum(1) >= min_valid)
+
+
+def noisy_windows(windows: Windows, tracts: Tracts, rng: np.random.Generator, distance_cond: bool) -> Windows:
+    """One usable tract per window. distance_cond (6DroneSyn, camera at the origin): same distance band as the last
+    observation, line of sight aligned in azimuth; else (generated) uniform tract and uniform yaw."""
+    tr = usable(tracts)
+    dist = np.linalg.norm(windows.last_p, axis=1) if distance_cond else None
+    idx, _ = sample_tracts(tr, len(windows), rng, distance=dist)
+    yaw = yaw_angles(tr, idx, rng, target_los=windows.last_p / dist[:, None] if distance_cond else None)
+    return apply_tracts(windows, tr, idx, yaw)
