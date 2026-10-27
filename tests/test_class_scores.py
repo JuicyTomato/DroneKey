@@ -1,7 +1,15 @@
 import numpy as np
 import pytest
 
-from dronepose.keypoints.class_scores import combine, fuse_causal, log_scores, scores_c1
+from pathlib import Path
+
+from scipy.spatial.transform import Rotation
+
+from dronepose.common.geometry import project
+from dronepose.data.drone_models import load_drone_models
+from dronepose.keypoints.class_scores import combine, fuse_causal, log_scores, reproj_per_class, scores_c1, \
+    scores_geom
+from tests.fixtures.fake_dataset import FAKE_K
 from dronepose.keypoints.detections import Detection, class_causal_vote
 
 
@@ -61,3 +69,33 @@ def test_combine_and_log():
     assert s == {"f": {"03": 2.0, "06": 1.0}, "g": {"01": 1.0}}
     lg = log_scores({"f": {"03": 1.0}}, 0.1)
     assert lg["f"]["06"] == pytest.approx(np.log(0.1)) and lg["f"]["03"] == 0.0 and len(lg["f"]) == 7
+
+
+MODELS = load_drone_models(Path(__file__).resolve().parents[1] / "configs" / "drone_models.json")
+
+
+def _projected(drone):
+    R = Rotation.from_euler("xz", [20, 30], degrees=True).as_matrix()
+    img = project(FAKE_K, (R @ MODELS[drone].kpts_flu.T).T + np.array([0.1, -0.05, 3.0]))
+    return np.hstack([img, np.ones((4, 1))])
+
+
+def test_reproj_true_model_is_zero():
+    e = reproj_per_class({"K": FAKE_K.tolist()}, _projected("03"), MODELS)
+    assert set(e) == set(MODELS) and e["03"] < 1e-3 and min(e, key=e.get) == "03"
+
+
+def test_reproj_nan_keypoints_gives_none():
+    kp = _projected("03")
+    kp[2, 0] = np.nan
+    assert reproj_per_class({"K": FAKE_K.tolist()}, kp, MODELS) is None
+
+
+def test_geom_log_and_quad():
+    r = {"f": {"03": 0.0, "06": 100.0}, "g": None}
+    lg = scores_geom(r, "log")
+    assert lg["f"]["06"] == pytest.approx(-np.log(50.1)) and lg["f"]["03"] == pytest.approx(-np.log(0.1))
+    assert "g" not in lg
+    assert scores_geom({"f": {"03": 2.0}}, "quad", sigma=1.0)["f"]["03"] == pytest.approx(-2.0)
+    with pytest.raises(ValueError, match="form"):
+        scores_geom(r, "abs")

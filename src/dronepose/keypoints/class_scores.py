@@ -4,9 +4,11 @@
 """
 import numpy as np
 
+from dronepose.data.drone_models import DroneModel
 from dronepose.data.sixdronesyn import DRONE_IDS
 from dronepose.keypoints.detections import Detection
 from dronepose.pose.replay import _by_sequence
+from dronepose.pose.solvers import solve
 
 FrameScores = dict[str, dict[str, float]]
 TEMPORAL = ("F", "S")
@@ -30,6 +32,39 @@ def combine(parts: list[tuple[FrameScores, float]]) -> FrameScores:
             acc = out.setdefault(fid, {})
             for c, v in sc.items():
                 acc[c] = acc.get(c, 0.0) + w * v
+    return out
+
+
+def reproj_per_class(record: dict, kpts: np.ndarray, models: dict[str, DroneModel]) -> dict[str, float] | None:
+    """Least reprojection error (px) of IPPE + LM with each drone model; None when the keypoints are not finite or
+    the PnP fails for any model (the frame then gives no geometric evidence at all)."""
+    img = np.asarray(kpts, float)[:, :2]
+    if not np.isfinite(img).all():
+        return None
+    K = np.asarray(record["K"], float)
+    out = {}
+    for d, m in models.items():
+        try:
+            sols = solve("ippe", m.kpts_flu, img, K, refine=True)
+        except ValueError:
+            return None
+        if not sols:
+            return None
+        out[d] = float(min(s.reproj_px for s in sols))
+    return out
+
+
+def scores_geom(reproj: dict[str, dict[str, float] | None], form: str, eps: float = 0.1, cap: float = 50.0,
+                sigma: float = 1.0) -> FrameScores:
+    """Geometric scores from `reproj_per_class` rows: log = -log(min(e, cap) + eps), quad = -min(e, cap)^2 / 2 sigma^2."""
+    if form not in ("log", "quad"):
+        raise ValueError(f"unknown geometry form {form!r}: expected 'log' or 'quad'")
+    out: FrameScores = {}
+    for fid, e in reproj.items():
+        if e is None:
+            continue
+        out[fid] = {c: float(-np.log(min(v, cap) + eps)) if form == "log" else -min(v, cap) ** 2 / (2 * sigma ** 2)
+                    for c, v in e.items()}
     return out
 
 
