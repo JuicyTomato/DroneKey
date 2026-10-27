@@ -32,13 +32,17 @@ def load_boxes(path: Path) -> dict[str, list[list[float]]]:
     return {row["frame_id"]: row.get("boxes") or [] for row in rows}
 
 
-def scores_cm(boxes: dict[str, list[list[float]]], iou_min: float) -> FrameScores:
-    """Several boxes of C: per class, the highest confidence among boxes with IoU >= iou_min with the top box."""
+def scores_cm(boxes: dict[str, list[list[float]]], iou_min: float, top_conf_min: float = 0.25) -> FrameScores:
+    """Several boxes of C: per class, the highest confidence among boxes with IoU >= iou_min with the top box. Only
+    frames where C has a detection (top box conf >= top_conf_min, the threshold of C's top-box file) are scored, so
+    CM differs from C1 by the extra classes, not by a lower detection threshold."""
     out: FrameScores = {}
     for fid, bs in boxes.items():
         if not bs:
             continue
         top = max(bs, key=lambda b: b[4])
+        if top[4] < top_conf_min:
+            continue
         sc: dict[str, float] = {}
         for b in bs:
             if iou_xyxy(b[:4], top[:4]) >= iou_min:

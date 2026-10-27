@@ -24,8 +24,8 @@ from dronepose.data.drone_models import load_drone_models  # noqa: E402
 from dronepose.eval.e1 import e1_table  # noqa: E402
 from dronepose.eval.bootstrap import by_trajectory, paired_bootstrap  # noqa: E402
 from dronepose.eval.class_eval import class_metrics, correct_rows  # noqa: E402
-from dronepose.eval.class_select import (GRID, Cell, choose_cell, loso_maps, param_grid, pose_ok_from, tune_all,  # noqa: E402
-                                         tune_loso)
+from dronepose.eval.class_select import (GRID, Cell, choose_cell, latency_ok_from, loso_maps, param_grid,  # noqa: E402
+                                         pose_ok_from, tune_all, tune_loso)
 from dronepose.keypoints.class_scores import (combine, fuse_causal, load_boxes, load_probs, log_scores, scores_c1,  # noqa: E402
                                               scores_cm, scores_geom, scores_k)
 from dronepose.keypoints.detections import class_causal_vote, load_detections  # noqa: E402
@@ -39,6 +39,7 @@ DET = f"{KP}/keypoints_val_c_yolo26s_best.jsonl"
 CM = "experiments/class/cm/keypoints_val_c_allboxes.jsonl"
 K = "experiments/class/k/probs_val_s{}.jsonl"
 GEOM = "experiments/class/geom/geom_val_s{}.jsonl"
+FPS = "experiments/class/cls_runs/fps_cls.json"   # bench_fps.py --cls-weights on T4 (fps.B_cls)
 BASE = "C1+V"
 GT = "GT"
 N_BOOT = 2000
@@ -236,7 +237,9 @@ def write_md(path: Path, out: dict) -> None:
             lines.append(f"| {n} | {a['coverage']:.3f} | {a['median_rot_sym']:.3f}° | {a['p90_rot_sym']:.2f}° | "
                          f"{a['median_t_camera']:.4f} | {a['median_t_meters']:.4f} | {b['flip_rate']:.4f} | "
                          f"{_fmt_ci(p['rot_vs_base'])} | {out['cells'].get(n, {}).get('pose_ok', '—')} |")
-    lines += ["", f"**Scelta:** {out['choice']} (pose_ok da {'Task 8' if out['pose'] else '--no-pose: tutte vere'})",
+    lines += ["", f"**Scelta:** {out['choice']} (pose_ok da {'Task 8' if out['pose'] else '--no-pose: tutte vere'}; "
+              "B + classificatore su T4: " + (f"{out['fps_b_cls_t4']:.1f} FPS" if out["fps_b_cls_t4"] else
+                                        "non misurato, celle K escluse") + ", soglia 30 FPS)",
               "", "## Accuratezza per detection delle fonti", "", "```", json.dumps(out["det_accuracy"], indent=1), "```"]
     path.write_text("\n".join(lines) + "\n")
 
@@ -264,21 +267,26 @@ def main(argv=None) -> None:
     if not args.no_pose:
         pose, pose_ok = pose_level(results, args.workers)
 
-    choice = choose_cell(acc, boots_vs, {n: r["cell"] for n, r in results.items()}, pose_ok)
+    cell_of = {n: r["cell"] for n, r in results.items()}
+    fps_b_cls = json.loads(Path(FPS).read_text())["fps"].get("B_cls") if Path(FPS).exists() else None
+    latency_ok = latency_ok_from(cell_of, fps_b_cls)
+    eligible = {n: pose_ok[n] and latency_ok[n] for n in results}
+    choice = choose_cell(acc, boots_vs, cell_of, eligible)
     maps_dir = Path(args.maps_dir)
     maps_dir.mkdir(parents=True, exist_ok=True)
     for n, r in results.items():
         for s in SEEDS:
             (maps_dir / f"map_val_s{s}_{n}.json").write_text(json.dumps(r["maps"][s]))
     base_ci = boots_vs(BASE)
-    out = {"split": "val", "skipped_cells": skipped, "choice": choice, "pose": pose,
+    out = {"split": "val", "skipped_cells": skipped, "choice": choice, "pose": pose, "fps_b_cls_t4": fps_b_cls,
            "det_accuracy": det_accuracy(_S), "decomposition": decomposition(acc, boots_vs),
            "cells": {n: {"acc": acc[n], "acc_mean": float(np.mean(acc[n])), "cost": r["cell"].cost,
                          "n_params": r["cell"].n_params, "folds": r["folds"], "final_params": r["final_params"],
                          "seq_final_acc": [r["metrics"][s]["seq_final_acc"] for s in SEEDS],
                          "by_drone": {s: r["metrics"][s]["by_drone"] for s in SEEDS},
                          "by_scene": {s: r["metrics"][s]["by_scene"] for s in SEEDS},
-                         "vs_base": base_ci[n], "vs_choice": boots_vs(choice)[n], "pose_ok": pose_ok[n]}
+                         "vs_base": base_ci[n], "vs_choice": boots_vs(choice)[n], "pose_ok": pose_ok[n],
+                         "latency_ok": latency_ok[n]}
                      for n, r in results.items()}}
     outp = Path(args.out)
     outp.parent.mkdir(parents=True, exist_ok=True)

@@ -131,3 +131,9 @@ def test_load_probs_and_scores_k(tmp_path):
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
     s = scores_k(load_probs(path))
     assert set(s) == {"f"} and max(s["f"], key=s["f"].get) == "08"
+
+
+def test_scores_cm_ignores_frames_without_a_detection_above_threshold():
+    boxes = {"f": [[0, 0, 10, 10, 0.02, 2], [0, 0, 10, 10, 0.01, 5]],
+             "g": [[0, 0, 10, 10, 0.30, 2], [0, 0, 10, 10, 0.05, 5]]}
+    assert scores_cm(boxes, 0.5) == {"g": {"03": 0.30, "06": 0.05}}

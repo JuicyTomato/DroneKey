@@ -1,7 +1,7 @@
 import pytest
 
-from dronepose.eval.class_select import GRID, Cell, choose_cell, loso_maps, param_grid, pose_ok_from, tune_all, \
-    tune_loso
+from dronepose.eval.class_select import GRID, Cell, choose_cell, latency_ok_from, loso_maps, param_grid, \
+    pose_ok_from, tune_all, tune_loso
 
 
 def _cells(*names):
@@ -119,3 +119,10 @@ def test_pose_ok_from():
     assert pose_ok_from(mixed, flip=0.002, flip_base=0.002)
     assert not pose_ok_from(mixed, flip=0.008, flip_base=0.002)   # +0.6 points
     assert pose_ok_from([(-0.1, -0.2, -0.01)] * 3, flip=0.007, flip_base=0.002)   # +0.5 points: allowed
+
+
+def test_latency_ok_from():
+    cells = _cells("C1+W+g", "K+L")
+    assert latency_ok_from(cells, None) == {"C1+W+g": True, "K+L": False}       # not measured: K not allowed
+    assert latency_ok_from(cells, 29.9) == {"C1+W+g": True, "K+L": False}
+    assert latency_ok_from(cells, 30.0) == {"C1+W+g": True, "K+L": True}

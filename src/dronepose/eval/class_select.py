@@ -141,3 +141,9 @@ def pose_ok_from(boots_rot: list[tuple[float, float, float]], flip: float, flip_
     in every seed) and the flip rate without drone 08 grows by at most 0.5 points."""
     worse = all(lo > 0.0 for _, lo, _ in boots_rot)
     return not worse and flip <= flip_base + max_flip_increase + 1e-12
+
+
+def latency_ok_from(cells: dict[str, Cell], fps_b_cls: float | None, min_fps: float = 30.0) -> dict[str, bool]:
+    """Latency constraint (spec 6): cells with the classifier need B + classifier >= min_fps measured on T4; without a
+    measurement they are not allowed. Cost-0 cells always pass (geometry measured under 2 ms/frame)."""
+    return {n: c.cost == 0 or (fps_b_cls is not None and fps_b_cls >= min_fps) for n, c in cells.items()}
