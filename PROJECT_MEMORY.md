@@ -550,7 +550,7 @@ Rumore gaussiano i.i.d.: **non** è l'errore del PnP (D2 va rifatto con l'archiv
 
 **6DroneSyn val (zero-shot, 2808 finestre in metri), ADE 1 s e skill vs CV-2:** CV-2 0.067 · Kalman CA 0.047 (+30.5%) · R-CV 0.149 (−121%) · G 0.188 (−179%) · R-F 0.301 (−347%) · F 0.332 (−394%) · R-F-LSTM 0.308 · R-F-P 0.395 (−487%) · R-F rumore 0.526 (−681%). Tabella contro Kalman CA (senza soglia): tutte le reti tra −218% e −1023%. Drone 08 (unità del dataset, riga a parte): R-F −407% vs CV-2. **Lettura (esito negativo pre-registrato):** "il prior fisico è un peso su dati non fisici"; nessun braccio allenato solo sul generato regge fuori dominio; il meno peggio è R-CV (osservazione, non affermazione). R-F-P non sa quando non fidarsi della fisica: peso medio `w` = 0.878 sul generato e 0.875 sul 6DroneSyn (il gate non riconosce il fuori dominio). Coerente con §3.11: sul 6DroneSyn l'assetto è scollegato dal moto, quindi qualunque modello che usa l'inclinazione sbaglia.
 
-**Limiti:** rumore gaussiano non reale; 6DroneSyn solo val (test mai toccato), keyframe e non fisico; test generato mai toccato; 3 semi; tetto di 100 epoche (vedi sopra); nessuna ottimizzazione di iperparametri (valori del piano); la variante "con modo" usa il modo vero (oracolo). Prossimi passi possibili (non decisi): fine-tuning sul train del 6DroneSyn come esperimento separato; rumore dall'archivio degli errori reali (dopo 2.6); 3.6 ablation; E4a sul test una volta sola alla fine (3.4).
+**Limiti:** rumore gaussiano non reale; 6DroneSyn solo val (test mai toccato), keyframe e non fisico; test generato mai toccato; 3 semi; tetto di 100 epoche (vedi sopra); nessuna ottimizzazione di iperparametri (valori del piano); la variante "con modo" usa il modo vero (oracolo). Prossimi passi possibili (non decisi): fine-tuning sul train del 6DroneSyn come esperimento separato; ~~rumore dall'archivio degli errori reali (dopo 2.6)~~ (2026-10-27: D2b, §6sexdecies); 3.6 ablation; ~~E4a sul test una volta sola alla fine (3.4)~~ (2026-10-27: fatto, §6sexdecies).
 
 ## 6terdecies. DroneKey: reimplementazione (2026-10-21)
 
@@ -646,7 +646,72 @@ Spec: `docs/superpowers/specs/2026-10-26-fase2-e3-archivio-design.md`; piano: `d
 
 **Trappola:** la shell è zsh, quindi gli array partono da 1. Un ciclo `${VAL[$s]}` ha scambiato i semi nel primo export di val, rifatto con percorsi espliciti.
 
-**Prossimi passi:** la Fase 3 rifà D2 e fa E4b con archivio e pose; la pipeline E1 e il video si possono aggiornare a IPPE + LM + `global` (oggi i numeri E1 del §6quaterdecies sono con IPPE + `global`).
+**Prossimi passi:** ~~la Fase 3 rifà D2 e fa E4b con archivio e pose;~~ (2026-10-27: fatto, §6sexdecies) la pipeline E1 e il video si possono aggiornare a IPPE + LM + `global` (oggi i numeri E1 del §6quaterdecies sono con IPPE + `global`).
+
+## 6sexdecies. Fase 3: archivio degli errori reali — D2b, E4a, E4b (3.4, 3.5) (2026-10-27)
+
+Spec: `docs/superpowers/specs/2026-10-27-fase3-archivio-e4-design.md` (criteri D2b, regola di selezione, T1–T3 pre-registrati con l'approvazione, commit `7c34961`); piano: `docs/superpowers/plans/2026-10-27-fase3-archivio-e4.md` (9 task, Native; commit `15c30d9`…`35bc69f`). Codice nuovo in `src/dronepose/forecast/`: `gaps.py` (frame persi), `archive_noise.py` (tratti dell'archivio), `kalman_los.py`, `e4.py` (pose stimate → finestre), `e4_eval.py`, `selection.py`; estesi con default invariati `windows.py` (`obs_valid`, `subset`), `tuning.py`, `acro.py` (`acro_rollout`), `nets/features.py` (maschera, pool dall'archivio), `nets/train.py` (rifinitura `init_from`, `lr`, `n_in`), `nets/evaluate.py` (`criterion_d2b`). Script: `scripts/forecast/archive/d2b_*.py`, `scripts/forecast/e4/e4_{tune,pools,train,val,test}.py`. Dati: `data/processed/forecast_archive/` (pool D2b ~3 GB); risultati: `experiments/forecast/archive_d2b/`, `experiments/forecast/e4/{val,test}/`. Identità al bit verificata: senza frame persi `predict_all` sulla val dà array identici al codice precedente (D1–D4, 3.2, 3.1b invariati).
+
+**Principio (utente: "lavoro quanto più pulito possibile"):** l'errore usato per allenare o tarare non viene mai dalla scena su cui si giudica. Leave-one-scene-out sulle scene dell'archivio 03 / 09 / 14; il test 06–07 non è nell'archivio.
+
+**Decisioni:**
+- **Utente:** soluzione completa, cioè reti allenate anche sul 6DroneSyn; **scala dalla classe predetta** (riscalatura alla lettura, `error_archive.py` e file invariati); test una sola volta, dopo il suo ok.
+- **Mie, in spec §7/§6bis:**
+  - semi uniti;
+  - generato con imbardata casuale, senza distanza;
+  - 6DroneSyn con fasce ≤ 3 m / > 3 m e azimut della linea di vista allineato;
+  - frame persi = ultima posa valida + canale maschera;
+  - early stopping delle reti 6D sulle scene di train 02 e 05;
+  - Kalman CA-LOS;
+  - selezione "migliore e pareggi → il più semplice" (ordine CV < CA < KF CV < KF CA < KF CA-LOS < fisica < R-CV-6D < R-CV-FT < G-6D).
+
+**Fatti trovati:**
+1. **La riscalatura alla classe predetta conta.** Nel seme 0 la classe è sbagliata nel 13% dei frame di val (1.650): con la classe predetta il p90 di |dp| scende da 25.8 a **13.8 cm**, la mediana resta 3.4 cm. Il PnP con il modello della classe predetta, convertito con il suo `s_c`, compensa gran parte della scala. Sul test i frame con classe sbagliata sono ~26% (3.375 su ~13.000).
+2. **Il nome delle sequenze ha il grado a tre cifre** (`09_01_17_000`).
+3. **Prestazioni:** con i frame persi il raggruppamento per schema era di ore per fold (integrazione acro a 600 Hz per schema). Corretto raggruppando sugli ultimi `k` frame validi e integrando una volta per tempo dell'ultimo frame valido. Taratura: 77 s / 500 finestre senza maschera, 116 s con.
+
+**D2b (val generata L1 pesata, R-F allenato con l'archivio contro F ritarato con lo stesso rumore): passa.**
+- **Totale:** +42.1% [+40.0, +44.2], semi +41.7 / +42.4 / +42.2%.
+- **Fold 03 / 09 / 14:** +44.3 / +34.4 / +46.0%, tutti con IC sopra lo zero.
+- **ADE 1 s:** R-F 0.223 · F 0.385 · Kalman CA 0.528 m.
+- **R-F gaussiano (3.3) provato sull'archivio:** 0.262 m. Allenare con gli errori reali guadagna il 15% [+12.8, +17.2].
+- **Basi ritarate:** acro gen `k` 15, λ 12, hold_vz (come col gaussiano); avvisi di bordo `k` = 15, che è il massimo con N = 15, e λ = 12, come nel 3.3.
+- **Frame persi sul generato:** 0.5–1.7%.
+
+**E4a / E4b sulla val (gruppo in metri, ADE 1 s, skill vs CV-2):**
+- **E4a (pose vere):**
+  - CV-2 0.067 · Kalman CA 0.047 (+30.5%);
+  - G-6D 0.039 · R-CV-6D 0.045 · **R-CV-FT 0.037 (+45.0% [+36.5, +55.2])**;
+  - **scelto R-CV-FT** (pareggio con G-6D).
+- **E4b (pose stimate, classe causale, 3 semi × 3 copie, 29 484 finestre):**
+  - CV-2 0.413 (non ritarato, esplode col rumore) · CV-k 0.238 · Kalman CA 0.239 · Kalman CA-LOS 0.220;
+  - G-6D 0.179 · **R-CV-6D 0.178 (+56.9% [+39.9, +66.4])** · R-CV-FT 0.199;
+  - **scelto R-CV-6D** (pareggio con G-6D).
+  - CA puro peggiora (−28%). Classe vera: R-CV-6D 0.152.
+- **Esito pre-registrato smentito:** le reti dovevano non battere il Kalman CA, invece lo battono; il guadagno maggiore è sulla scena 09.
+- **Kalman CA-LOS:** sceglie `r_los` 3–10, `r_lat` 0.3 (anisotropia vera) e migliora il Kalman CA dell'8%.
+- **Orientamento a 1 s (pose stimate):** velocità angolare costante 26.3° (12.8° con pose vere), costante 31.4°.
+
+**Test (passaggio unico, dopo l'ok dell'utente, `experiments/forecast/e4/test/`):**
+- **T1** (E4a, R-CV-FT vs CV-2): **+43.9% [+36.8, +51.6]**.
+- **T2** (E4b, R-CV-6D vs CV-2 sulle stesse pose): **+27.8% [+19.1, +37.5]**.
+- **T3** (degrado oracle → pipeline, R-CV-6D): 0.083 → 0.250 m, **+0.167 [+0.103, +0.253]**.
+- **Contro il Kalman CA** (riga senza soglia): E4a 0.061 contro 0.083; E4b 0.250 contro 0.298.
+- **Classe vera sul test:** R-CV-6D 0.160, R-CV-FT 0.156. La classe del drone è il collo di bottiglia sul test.
+- **Drone 08** (unità del dataset): E4b circa 0.49 contro 0.10 con le pose vere.
+
+**Limiti:**
+- test di 12 traiettorie in metri (IC larghi);
+- archivio di 3 scene, con fold sbilanciati (scena 14 = 58%);
+- sul generato l'errore non dipende dalla distanza;
+- selezione E4a fatta conoscendo i numeri della val del §6decies (sguardo in avanti morbido);
+- pose della val un po' ottimistiche (checkpoint e combinazione PnP scelti sulla val);
+- in E4b la skill contro CV-2 è gonfiata dal CV-2 non ritarato (va affiancato il Kalman CA ritarato);
+- `selection.py` e i test di equivalenza dei frame persi scritti dopo il codice (registro);
+- pose del drone 08 molto peggiori.
+- **dalla revisione finale:** le stime puntuali di E4 pesano le finestre, non le traiettorie (come nel 3.2; sulla val la scena 14 pesa ~2/3; sul test, tutte da 120 frame, le due letture coincidono); `r_los` = 10 al bordo della griglia in fold03 e 08_final (il braccio ha perso sulla val); il ripiego di fascia di distanza non è mai scattato.
+
+**Prossimi passi possibili (non decisi):** 3.6 ablation; aggiornare E1 a IPPE + LM + `global`; migliorare la classificazione del drone (pesa sul test); E5.
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
