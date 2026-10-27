@@ -1,6 +1,7 @@
 import pytest
 
-from dronepose.eval.class_select import GRID, Cell, choose_cell, loso_maps, param_grid, tune_all, tune_loso
+from dronepose.eval.class_select import GRID, Cell, choose_cell, loso_maps, param_grid, pose_ok_from, tune_all, \
+    tune_loso
 
 
 def _cells(*names):
@@ -109,3 +110,12 @@ def test_loso_maps_takes_each_scene_from_its_fold():
     build = lambda params: {0: {r["frame_id"]: params["c"] for r in recs}}  # noqa: E731
     out = loso_maps(build, recs, {"03": {"c": "05"}, "09": {"c": "06"}})
     assert out == {0: {recs[0]["frame_id"]: "05", recs[1]["frame_id"]: "06"}}
+
+
+def test_pose_ok_from():
+    worse = [(0.2, 0.05, 0.4)] * 3
+    mixed = [(0.2, 0.05, 0.4), (0.1, -0.02, 0.3), (0.2, 0.05, 0.4)]
+    assert not pose_ok_from(worse, flip=0.002, flip_base=0.002)
+    assert pose_ok_from(mixed, flip=0.002, flip_base=0.002)
+    assert not pose_ok_from(mixed, flip=0.008, flip_base=0.002)   # +0.6 points
+    assert pose_ok_from([(-0.1, -0.2, -0.01)] * 3, flip=0.007, flip_base=0.002)   # +0.5 points: allowed

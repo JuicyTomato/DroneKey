@@ -133,3 +133,11 @@ def choose_cell(acc: dict[str, list[float]], boots_vs: Callable[[str], dict[str,
     pool = [n for n in ties if cells[n].cost == cheapest]
     top = max(mean[n] for n in pool)
     return min((n for n in pool if mean[n] == top), key=lambda n: (cells[n].geom, cells[n].n_params, n))
+
+
+def pose_ok_from(boots_rot: list[tuple[float, float, float]], flip: float, flip_base: float,
+                 max_flip_increase: float = 0.005) -> bool:
+    """Pose constraint (spec 6): the median rotation is not significantly worse than the base (interval above zero
+    in every seed) and the flip rate without drone 08 grows by at most 0.5 points."""
+    worse = all(lo > 0.0 for _, lo, _ in boots_rot)
+    return not worse and flip <= flip_base + max_flip_increase + 1e-12

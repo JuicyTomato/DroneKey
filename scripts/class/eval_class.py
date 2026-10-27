@@ -20,13 +20,16 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))   # dronepose without pip install
 from dronepose.data.canonical import read_jsonl  # noqa: E402
+from dronepose.data.drone_models import load_drone_models  # noqa: E402
+from dronepose.eval.e1 import e1_table  # noqa: E402
 from dronepose.eval.bootstrap import by_trajectory, paired_bootstrap  # noqa: E402
 from dronepose.eval.class_eval import class_metrics, correct_rows  # noqa: E402
-from dronepose.eval.class_select import GRID, Cell, choose_cell, loso_maps, param_grid, tune_all, tune_loso  # noqa: E402
+from dronepose.eval.class_select import (GRID, Cell, choose_cell, loso_maps, param_grid, pose_ok_from, tune_all,  # noqa: E402
+                                         tune_loso)
 from dronepose.keypoints.class_scores import (combine, fuse_causal, load_boxes, load_probs, log_scores, scores_c1,  # noqa: E402
                                               scores_cm, scores_geom, scores_k)
 from dronepose.keypoints.detections import class_causal_vote, load_detections  # noqa: E402
-from dronepose.pose.replay import check_no_test  # noqa: E402
+from dronepose.pose.replay import check_no_test, load_keypoints, replay  # noqa: E402
 
 SEEDS = (0, 1, 2)
 KP = "experiments/results/keypoints"
@@ -37,7 +40,9 @@ CM = "experiments/class/cm/keypoints_val_c_allboxes.jsonl"
 K = "experiments/class/k/probs_val_s{}.jsonl"
 GEOM = "experiments/class/geom/geom_val_s{}.jsonl"
 BASE = "C1+V"
+GT = "GT"
 N_BOOT = 2000
+POSE_KEYS = ("coverage", "median_rot_sym", "p90_rot_sym", "median_t_camera", "median_t_meters", "flip_rate")
 
 _S: dict = {}   # sources, filled once per process (main and every worker, see _init)
 
@@ -137,6 +142,43 @@ def det_accuracy(src: dict) -> dict:
     return out
 
 
+def run_pose(job: tuple[str, int, dict[str, str] | None]) -> dict:
+    """Pose level of one class map (None = true class): IPPE + LM + global, E1 metrics on all / no08 frames."""
+    name, seed, cls_map = job
+    if "kpts" not in _S:
+        _S["kpts"] = {s: load_keypoints(Path(KPTS[s])) for s in SEEDS}
+        _S["models"] = load_drone_models(Path("configs/drone_models.json"))
+    recs = _S["records"]
+    res = replay(recs, _S["kpts"][seed], _S["models"], "global", model_drone=cls_map, solver="ippe", refine=True)
+    flat = [r for rs in res.values() for r in rs]
+    table = e1_table(flat, recs, _S["kpts"][seed])
+    return {"name": name, "seed": seed, "table": {row: {k: table[row][k] for k in POSE_KEYS} for row in ("all", "no08")},
+            "rot": [{"frame_id": r["frame_id"], "rot_err_sym_deg": r["rot_err_sym_deg"]} for r in flat
+                    if r["rot_err_sym_deg"] is not None]}
+
+
+def pose_level(results: dict, workers: int) -> tuple[dict, dict[str, bool]]:
+    """Pose metrics per cell and seed, rotation bootstrap against the base, and the pose constraint."""
+    jobs = [(n, s, r["maps"][s]) for n, r in results.items() for s in SEEDS] + [(GT, s, None) for s in SEEDS]
+    with ProcessPoolExecutor(workers, initializer=_init) as ex:
+        done = list(ex.map(run_pose, jobs))
+    by = {(d["name"], d["seed"]): d for d in done}
+    names = list(results) + [GT]
+    boots = []
+    for s in SEEDS:
+        groups = {n: by_trajectory(by[(n, s)]["rot"], "rot_err_sym_deg") for n in names}
+        boots.append(paired_bootstrap(groups, BASE, N_BOOT, seed=s))
+    pose = {}
+    for n in names:
+        tables = [by[(n, s)]["table"] for s in SEEDS]
+        mean = {row: {k: float(np.mean([t[row][k] for t in tables if t[row][k] is not None])) for k in POSE_KEYS}
+                for row in ("all", "no08")}
+        pose[n] = {"per_seed": tables, "mean": mean, "rot_vs_base": [b[n] for b in boots]}
+    flip_base = pose[BASE]["mean"]["no08"]["flip_rate"]
+    ok = {n: pose_ok_from(pose[n]["rot_vs_base"], pose[n]["mean"]["no08"]["flip_rate"], flip_base) for n in results}
+    return pose, ok
+
+
 def boots_factory(results: dict, records: list[dict]):
     cache: dict[str, dict] = {}
 
@@ -185,6 +227,15 @@ def write_md(path: Path, out: dict) -> None:
     lines += ["", "## Scomposizione", "", "| Asse | Cella | Contro | Differenza | IC per seme |", "|---|---|---|---|---|"]
     lines += [f"| {r['what']} | {r['cell']} | {r['vs']} | {r['diff']:+.3f} | {_fmt_ci(r['ci'])} |"
               for r in out["decomposition"]]
+    if out["pose"]:
+        lines += ["", "## Posa (IPPE + LM + global, media dei semi)", "",
+                  "| Cella | Copertura | Rot. mediana | p90 | t camera | t metri | Flip senza 08 | Rot. vs base (IC) | ok |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+        for n, p in sorted(out["pose"].items(), key=lambda kv: kv[1]["mean"]["all"]["median_rot_sym"]):
+            a, b = p["mean"]["all"], p["mean"]["no08"]
+            lines.append(f"| {n} | {a['coverage']:.3f} | {a['median_rot_sym']:.3f}° | {a['p90_rot_sym']:.2f}° | "
+                         f"{a['median_t_camera']:.4f} | {a['median_t_meters']:.4f} | {b['flip_rate']:.4f} | "
+                         f"{_fmt_ci(p['rot_vs_base'])} | {out['cells'].get(n, {}).get('pose_ok', '—')} |")
     lines += ["", f"**Scelta:** {out['choice']} (pose_ok da {'Task 8' if out['pose'] else '--no-pose: tutte vere'})",
               "", "## Accuratezza per detection delle fonti", "", "```", json.dumps(out["det_accuracy"], indent=1), "```"]
     path.write_text("\n".join(lines) + "\n")
@@ -211,7 +262,7 @@ def main(argv=None) -> None:
     pose = None
     pose_ok = {n: True for n in results}
     if not args.no_pose:
-        raise SystemExit("pose level: Task 8")
+        pose, pose_ok = pose_level(results, args.workers)
 
     choice = choose_cell(acc, boots_vs, {n: r["cell"] for n, r in results.items()}, pose_ok)
     maps_dir = Path(args.maps_dir)
