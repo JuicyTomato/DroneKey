@@ -31,6 +31,9 @@ class ForecastConfig:
     acro_lam_grid: tuple[float, ...] = (0.0, 2.0, 5.0, 8.0, 12.0)
     acro_thrust: tuple[str, ...] = ("constant", "hold_vz")
     acro_kd: tuple = ("estimate", 0.0, 0.7)
+    # E4b (spec 2026-10-27 §5.5): Kalman CA with the measurement variance split along the line of sight
+    kf_los_r_los_grid: tuple[float, ...] = (1e-6, 1e-4, 1e-3, 1e-2, 3e-2, 1e-1, 0.3, 1.0, 3.0, 10.0)
+    kf_los_r_lat_grid: tuple[float, ...] = (1e-6, 1e-4, 1e-3, 1e-2, 3e-2, 1e-1, 0.3, 1.0, 3.0, 10.0)
 
 
 def load_config(path: Path = Path("configs/forecast.json")) -> ForecastConfig:

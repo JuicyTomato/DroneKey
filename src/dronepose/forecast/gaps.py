@@ -15,6 +15,7 @@ from dronepose.forecast.acro import acro_predict
 from dronepose.forecast.baselines import ca, constant_position, cv
 from dronepose.forecast.ctr import ctra, ctrv
 from dronepose.forecast.kalman import kalman_predict
+from dronepose.forecast.kalman_los import kalman_los_predict
 from dronepose.forecast.orientation import constant_angular_velocity, hold_orientation
 from dronepose.forecast.physics import physics_predict
 from dronepose.forecast.windows import Windows
@@ -85,6 +86,10 @@ def ca_g(w: Windows, k: int) -> np.ndarray:
 
 def kalman_g(w: Windows, model: str, q: float, r) -> np.ndarray:
     return predict_gapped(w, lambda s: kalman_predict(s.obs_t, s.obs_p, s.fut_t, model, q, r))
+
+
+def kalman_los_g(w: Windows, q: float, r_los: float, r_lat: float) -> np.ndarray:
+    return predict_gapped(w, lambda s: kalman_los_predict(s.obs_t, s.obs_p, s.last_p, s.fut_t, q, r_los, r_lat))
 
 
 def physics_g(w: Windows, k: int, g: float, max_tilt_deg: float) -> np.ndarray:

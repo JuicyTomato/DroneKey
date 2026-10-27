@@ -9,8 +9,8 @@ import itertools
 import numpy as np
 
 from dronepose.forecast.config import ForecastConfig
-from dronepose.forecast.gaps import (acro_g, ca_g, const_g, ctr_g, cv_g, kalman_g, physics_g, rot_hold_g,
-                                     rot_omega_g)
+from dronepose.forecast.gaps import (acro_g, ca_g, const_g, ctr_g, cv_g, kalman_g, kalman_los_g, physics_g,
+                                     rot_hold_g, rot_omega_g)
 from dronepose.forecast.metrics import ade_at, metric_group, position_errors
 from dronepose.forecast.windows import Windows
 
@@ -46,8 +46,9 @@ def _acro_variant(params: dict, key: str) -> tuple:
     return v["lam"], v["thrust"], v.get("k", params["acro_k"]), v.get("kd", params["acro_kd"])
 
 
-def tune(windows: Windows, cfg: ForecastConfig) -> dict:
-    """Grid search minimising the mean ADE at the full horizon over the windows in metres."""
+def tune(windows: Windows, cfg: ForecastConfig, los: bool = False) -> dict:
+    """Grid search minimising the mean ADE at the full horizon over the windows in metres; los=True also tunes the
+    line-of-sight Kalman CA (E4b: positions must have their origin in the camera)."""
     w, H = windows, cfg.pred_len
     grid, best = [], {}
 
@@ -64,6 +65,9 @@ def tune(windows: Windows, cfg: ForecastConfig) -> dict:
     for model, qs in (("kf_cv", cfg.kf_cv_q_grid), ("kf_ca", cfg.kf_ca_q_grid)):
         for q, r in itertools.product(qs, cfg.kf_r_grid):
             run(model, {"q": q, "r": r}, kalman_g(w, model[3:], q, r))
+    if los:
+        for q, r_los, r_lat in itertools.product(cfg.kf_ca_q_grid, cfg.kf_los_r_los_grid, cfg.kf_los_r_lat_grid):
+            run("kf_ca_los", {"q": q, "r_los": r_los, "r_lat": r_lat}, kalman_los_g(w, q, r_los, r_lat))
 
     for name in ("ctrv", "ctra"):
         for k in cfg.ctr_k_grid:
@@ -94,6 +98,8 @@ def tune(windows: Windows, cfg: ForecastConfig) -> dict:
            "acro_k": best["physics_acro"][0]["k"], "acro_kd": best["physics_acro"][0]["kd"],
            "acro_gen": dict(best["physics_acro_gen"][0]),
            "scores": {m: s for m, (_, s) in best.items()}, "grid": grid, "edge_warnings": warnings}
+    if los:
+        out["kf_ca_los"] = best["kf_ca_los"][0]
     if acro["mode"]:
         out["acro_mode"] = acro["mode"]
         out["scores"][MODE_METHOD] = acro["mode_score"]
@@ -133,7 +139,7 @@ def _tune_acro(w: Windows, cfg: ForecastConfig, H: int, grid: list) -> dict:
     return out
 
 
-def predict_all(windows: Windows, params: dict, cfg: ForecastConfig) -> dict[str, np.ndarray]:
+def predict_all(windows: Windows, params: dict, cfg: ForecastConfig, los: bool = False) -> dict[str, np.ndarray]:
     missing = [k for k in ("ctr_k", "acro_k", "acro_kd", "acro_gen") if k not in params]
     if missing:
         raise ValueError(f"tuning parameters without {missing} (written before step 3.1b): "
@@ -155,6 +161,9 @@ def predict_all(windows: Windows, params: dict, cfg: ForecastConfig) -> dict[str
     out["physics_acro"] = acro_g(w, params["acro_k"], 0.0, "constant", params["acro_kd"])
     lam, th, k, kd = _acro_variant(params, "acro_gen")
     out["physics_acro_gen"] = acro_g(w, k, lam, th, kd)
+    if los:
+        v = params["kf_ca_los"]
+        out["kf_ca_los"] = kalman_los_g(w, v["q"], v["r_los"], v["r_lat"])
     if "mode" in w.meta and "acro_mode" in params:
         pred = out["physics_acro_gen"].copy()          # a mode not seen in tuning keeps the mode-blind setting
         modes = np.asarray(w.meta["mode"])

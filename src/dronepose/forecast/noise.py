@@ -23,7 +23,8 @@ RETUNE_GRIDS = {"cv_k_grid": (2, 3, 5, 10, 15), "ca_k_grid": (3, 5, 10, 15),
                 "kf_r_grid": (1e-6, 1e-4, 1e-3, 1e-2, 3e-2, 1e-1, 0.3, 1.0, 3.0, 10.0),
                 "ctr_k_grid": (3, 5, 10, 15), "acro_k_grid": (3, 5, 10, 15)}
 _INT_GRIDS = {"cv_k_grid", "ca_k_grid", "ctr_k_grid", "acro_k_grid"}
-_FLOAT_GRIDS = {"kf_cv_q_grid", "kf_ca_q_grid", "kf_r_grid", "acro_lam_grid"}
+_FLOAT_GRIDS = {"kf_cv_q_grid", "kf_ca_q_grid", "kf_r_grid", "acro_lam_grid", "kf_los_r_los_grid",
+                "kf_los_r_lat_grid"}
 KEPT_PARAMS = ("cv_k", "ca_k", "kf_cv", "kf_ca", "ctr_k", "acro_k", "acro_kd", "acro_gen", "acro_mode")
 SKILL = ("physics_acro_gen", "kf_ca")
 
