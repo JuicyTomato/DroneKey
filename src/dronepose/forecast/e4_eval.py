@@ -103,14 +103,25 @@ def concat_errors(parts: list[dict]) -> dict:
     return {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
 
 
+def align_window_rows(keys_a: list, keys_b: list) -> tuple[np.ndarray, np.ndarray]:
+    """Rows of two `pipeline_errors(..., with_keys=True)` runs that are the same window (same key, e.g. pose seed,
+    copy, GT window index); returns the row indices of a and b, sorted by key."""
+    ka, kb = ({k: i for i, k in enumerate(keys)} for keys in (keys_a, keys_b))
+    if len(ka) != len(keys_a) or len(kb) != len(keys_b):
+        raise ValueError("window keys must be unique")
+    common = sorted(set(ka) & set(kb))
+    return np.array([ka[k] for k in common], int), np.array([kb[k] for k in common], int)
+
+
 def pipeline_errors(trajs, pose_paths: list[Path], cfg: ForecastConfig, params_for, nets_for, device=None,
-                    allow_test: bool = False) -> tuple[dict, dict, np.ndarray, dict]:
+                    allow_test: bool = False, with_keys: bool = False) -> tuple:
     """E4b errors over every pose seed, copy and scene: params_for(scene, metric) -> parameters, nets_for(scene) ->
     nets (metric windows only; NaN for drone 08). Returns position errors, orientation errors, the GT window index of
-    every row (windows = make_windows(trajs).subset(index)) and counts (rescaled, lost, dropped windows)."""
+    every row (windows = make_windows(trajs).subset(index)) and counts (rescaled, lost, dropped windows).
+    with_keys: also a fifth item, the (pose_seed, copy, gt_index) key of every row (for pairing two runs)."""
     from dronepose.forecast.e4 import load_pose_windows
     from dronepose.forecast.gaps import drop_sparse
-    err_parts, rot_parts, idx_parts = [], [], []
+    err_parts, rot_parts, idx_parts, key_parts = [], [], [], []
     info = {"n_rescaled": 0, "n_lost_pred08": 0, "n_invalid": 0, "n_windows": 0, "n_dropped": 0}
     for path in pose_paths:
         w_all, inf = load_pose_windows(Path(path), trajs, cfg, allow_test=allow_test)
@@ -132,8 +143,11 @@ def pipeline_errors(trajs, pose_paths: list[Path], cfg: ForecastConfig, params_f
                 err_parts.append(e)
                 rot_parts.append(r)
                 idx_parts.append(ws.meta["gt_index"])
+                key_parts += [(int(a), str(c), int(g)) for a, c, g in
+                              zip(ws.meta["pose_seed"], ws.meta["copy"], ws.meta["gt_index"])]
     rot = {k: {m: np.concatenate([p[k][m] for p in rot_parts]) for m in ("geodesic", "up")} for k in rot_parts[0]}
-    return concat_errors(err_parts), rot, np.concatenate(idx_parts), info
+    out = (concat_errors(err_parts), rot, np.concatenate(idx_parts), info)
+    return out + (key_parts,) if with_keys else out
 
 
 TEST_OUT = Path("experiments/forecast/e4/test")

@@ -219,3 +219,22 @@ def test_autocorrelation_ignores_level_differences_between_runs():
     a = archive_summary.autocorrelation(t, "x", max_lag=5)
     assert a["acf"][0] == 1.0 and a["n_runs"] == 2
     assert all(abs(v) < 0.2 for v in a["acf"][1:])               # white noise around different levels
+
+
+def test_export_poses_class_map_rejected_with_archive():
+    base = ["--det", "d.jsonl", "--seed", "0", "--kpts", "k.jsonl", "--split", "val"]
+    with pytest.raises(ValueError, match="class-map"):
+        export_poses.main(["--combo", "ippe+global", "--archive", "--class-map", "m.json", *base])
+
+
+def test_causal_class_map_reads_file_or_votes(tmp_path):
+    from dronepose.keypoints.detections import Detection
+    recs = [{"frame_id": f"03_01_05_180_{i:04d}", "frame_idx": i, "drone": "01"} for i in (1, 2)]
+    dets = {recs[0]["frame_id"]: Detection((0.0, 0.0, 1.0, 1.0), 0.9, "05")}
+    assert export_poses.causal_class_map(recs, dets, None) == {r["frame_id"]: "05" for r in recs}
+    path = tmp_path / "m.json"
+    path.write_text(json.dumps({r["frame_id"]: "04" for r in recs}))
+    assert export_poses.causal_class_map(recs, dets, str(path)) == {r["frame_id"]: "04" for r in recs}
+    path.write_text(json.dumps({recs[0]["frame_id"]: "04"}))
+    with pytest.raises(ValueError, match="missing"):
+        export_poses.causal_class_map(recs, dets, str(path))

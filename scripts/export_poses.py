@@ -2,13 +2,15 @@
 
 Usage:
   python scripts/export_poses.py --combo NAME --det DETS.jsonl --split val|test [--allow-test] --seed N
-      --kpts KPTS.jsonl --out-dir experiments [--archive]
+      --kpts KPTS.jsonl --out-dir experiments [--archive | --class-map MAP.json]
 NAME = solver[+lm]+strategy, e.g. ippe+global. Writes, for both drone classes (causal = predicted class with causal
 vote, gt = oracle class), OUT_DIR/poses/poses_{split}_s{N}_{causal,gt}.jsonl: one row per frame, no header, `null`
 pose fields for frames without a pose. R_g = G R, t_g = G t s_c (metres; dataset units and `meters: false` for
 drones without s_c). `covariance` is null (hook for the uncertainty).
 --archive (val only) also writes OUT_DIR/pose_errors/archive_val_s{N}.jsonl (class causal; see pose/error_archive.py).
 The test split needs --allow-test; it is exported, never evaluated.
+--class-map: the causal file uses this frame_id -> drone map instead of the causal vote of --det (the gt file is
+unchanged); not allowed with --archive (the archive is never redone with another class).
 """
 import argparse
 import json
@@ -32,6 +34,17 @@ def parse_combo(name: str) -> Combo:
         if c.name == name:
             return c
     raise ValueError(f"unknown combo {name!r}; expected solver[+lm]+strategy, e.g. ippe+global")
+
+
+def causal_class_map(records: list[dict], dets, class_map: str | None) -> dict[str, str]:
+    """Class map of the causal file: the causal vote of the detections, or a map read from `class_map`."""
+    if class_map is None:
+        return class_causal_vote(records, dets)
+    m = json.loads(Path(class_map).read_text())
+    missing = [r["frame_id"] for r in records if r["frame_id"] not in m]
+    if missing:
+        raise ValueError(f"class map {class_map}: {len(missing)} frames missing (first {missing[0]})")
+    return {r["frame_id"]: m[r["frame_id"]] for r in records}
 
 
 def git_commit() -> str:
@@ -84,8 +97,10 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 def export(combo: str, det: str, split: str, allow_test: bool, seed: int, kpts: str, out_dir: str,
            archive: bool = False, records: list[dict] | None = None, canonical: str | None = None,
-           models_path: str = "configs/drone_models.json") -> list[Path]:
+           models_path: str = "configs/drone_models.json", class_map: str | None = None) -> list[Path]:
     """Replay `combo` on `split` and write the pose files (and the archive); returns the written paths."""
+    if archive and class_map is not None:
+        raise ValueError("--class-map cannot be used with --archive (the archive keeps the causal vote)")
     if split == "test" and not allow_test:
         raise ValueError("the test split needs --allow-test (it is exported, never evaluated)")
     if archive and split != "val":
@@ -98,7 +113,7 @@ def export(combo: str, det: str, split: str, allow_test: bool, seed: int, kpts: 
     kp = load_keypoints(Path(kpts))
     dets = load_detections(Path(det))
     by_id = {r["frame_id"]: r for r in records}
-    model_drone = {"gt": None, "causal": class_causal_vote(records, dets)}
+    model_drone = {"gt": None, "causal": causal_class_map(records, dets, class_map)}
     out, written = Path(out_dir), []
     for cls in CLASSES:
         res = _flat(replay(records, kp, models, c.strategy, model_drone=model_drone[cls], solver=c.solver,
@@ -125,8 +140,10 @@ def main(argv=None) -> None:
     ap.add_argument("--kpts", required=True, help="keypoints JSONL of this seed")
     ap.add_argument("--out-dir", default="experiments")
     ap.add_argument("--archive", action="store_true", help="also write the error archive (val only)")
+    ap.add_argument("--class-map", default=None, help="frame_id -> drone JSON for the causal file (not with --archive)")
     args = ap.parse_args(argv)
-    export(args.combo, args.det, args.split, args.allow_test, args.seed, args.kpts, args.out_dir, args.archive)
+    export(args.combo, args.det, args.split, args.allow_test, args.seed, args.kpts, args.out_dir, args.archive,
+           class_map=args.class_map)
 
 
 if __name__ == "__main__":

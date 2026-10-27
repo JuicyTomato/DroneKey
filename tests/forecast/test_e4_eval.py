@@ -45,3 +45,23 @@ def test_pipeline_errors_exact_poses_equal_e4a(tmp_path):
     assert info["n_windows"] == len(idx) and info["n_dropped"] == 0
     for k in err_b:
         np.testing.assert_allclose(err_b[k], err_a[k][idx], atol=1e-9, err_msg=k)
+
+
+def test_align_window_rows_pairs_by_key():
+    from dronepose.forecast.e4_eval import align_window_rows
+    a = [(0, "bg_000", 5), (0, "bg_090", 5), (0, "bg_000", 7), (1, "bg_000", 5)]
+    b = [(0, "bg_090", 5), (1, "bg_000", 5), (0, "bg_000", 7)]      # (0, bg_000, 5) dropped in b
+    ia, ib = align_window_rows(a, b)
+    assert [a[i] for i in ia] == [b[i] for i in ib] == sorted(b)
+    import pytest
+    with pytest.raises(ValueError, match="unique"):
+        align_window_rows(a + a[:1], b)
+
+
+def test_pipeline_errors_keys_option(tmp_path):
+    trajs = [_traj()]
+    path = _pose_file(tmp_path, trajs)
+    out = pipeline_errors(trajs, [path], CFG, lambda s, m: LOS, lambda s: {})
+    keyed = pipeline_errors(trajs, [path], CFG, lambda s, m: LOS, lambda s: {}, with_keys=True)
+    assert len(out) == 4 and len(keyed) == 5
+    assert len(keyed[4]) == len(out[2]) and all(k[2] == g for k, g in zip(keyed[4], out[2]))
