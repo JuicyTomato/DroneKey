@@ -78,3 +78,15 @@ def test_registry_row_from_history_json(tmp_path):
     (run / "history.json").write_text(json.dumps(hist))
     row = registry_row(run)
     assert row["epochs_done"] == 3 and row["best_epoch"] == 2 and row["train_hours"] == 1.5
+
+
+def test_registry_row_classification_run(tmp_path):
+    run = tmp_path / "cls_s_s0"
+    run.mkdir()
+    (run / "run_info.json").write_text(json.dumps({"name": "cls_s_s0", "seed": 0}))
+    with open(run / "results.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["epoch", "time", "metrics/accuracy_top1"])
+        w.writerows([[1, 3600, 0.5], [2, 7200, 0.9], [3, 10800, 0.8]])
+    row = registry_row(run)
+    assert row["epochs_done"] == 3 and row["best_epoch"] == 2 and row["train_hours"] == 3.0

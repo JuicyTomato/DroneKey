@@ -6,6 +6,8 @@ Stages, timed per frame with a device sync: c_640 (predict of C on the 640x360 f
 frame upscaled to 1920x1080, as the original would be; the upscale itself is not timed), crop_256 (crop pose model),
 ippe (CPU, K and drone from canonical_val.jsonl). B = c_640 + crop_jpeg + crop_256 + ippe; C = c_640 + ippe.
 Frames without a detection (or with non-finite keypoints) skip the stages that need them: `n` per stage tells.
+--cls-weights W adds stage cls_256 (crop classifier on the same crop) and B_cls = B + cls_256; without it the output
+is unchanged.
 """
 import argparse
 import json
@@ -57,6 +59,7 @@ def main(argv=None) -> None:
     ap.add_argument("--frames-dir", default=None, help="yolo_frames folder (default: dronepose-frames on Kaggle)")
     ap.add_argument("--canonical", default=None, help="canonical_val.jsonl (default: dronepose-cache on Kaggle)")
     ap.add_argument("--device", default=None, help="default: 0 on CUDA, else mps if available, else cpu")
+    ap.add_argument("--cls-weights", default=None, help="crop classifier: adds stage cls_256 and B_cls")
     args = ap.parse_args(argv)
     device = args.device or default_device()
     sync = make_sync(device)
@@ -80,10 +83,13 @@ def main(argv=None) -> None:
             raise FileNotFoundError(fid)
         imgs.append(img)
     det_model, crop_model = YOLO(args.c_weights), YOLO(args.crop_weights)
+    cls_model = YOLO(args.cls_weights) if args.cls_weights else None
     gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else device
     print(f"device {device} ({gpu}), {len(ids)} frames, warmup {args.warmup}", flush=True)
 
     ms: dict[str, list[float]] = {"c_640": [], "crop_jpeg": [], "crop_256": [], "ippe": []}
+    if cls_model is not None:
+        ms["cls_256"] = []
     nodet = 0
     t_start = time.time()
     for k, (fid, img) in enumerate(zip(ids, imgs)):
@@ -118,6 +124,13 @@ def main(argv=None) -> None:
         kpts = crop_result_to_frame(xy, kc, bc, box, CROP_SIZE)
         sync()
         ms["crop_256"].append(1000 * (time.perf_counter() - t))
+        # stage cls_256 (optional): class probabilities of the same crop
+        if cls_model is not None:
+            sync()
+            t = time.perf_counter()
+            cls_model.predict(crop, imgsz=CROP_SIZE, device=device, verbose=False)[0].probs.data.cpu().numpy()
+            sync()
+            ms["cls_256"].append(1000 * (time.perf_counter() - t))
         # stage ippe (CPU)
         if np.isfinite(kpts[:, :2]).all():
             rec = recs[fid]
@@ -131,13 +144,17 @@ def main(argv=None) -> None:
     med = {s: v["median_ms"] for s, v in stages.items()}
     fps = {"B": end_to_end_fps([med["c_640"], med["crop_jpeg"], med["crop_256"], med["ippe"]]),
            "C": end_to_end_fps([med["c_640"], med["ippe"]])}
+    if cls_model is not None:
+        fps["B_cls"] = end_to_end_fps([med["c_640"], med["crop_jpeg"], med["crop_256"], med["cls_256"], med["ippe"]])
     out = {"stages": stages, "fps": fps, "frames": len(ids), "no_detection": nodet, "warmup": args.warmup,
            "device": device, "gpu": gpu, "versions": {"torch": torch.__version__, "ultralytics": ultralytics.__version__,
                                                        "cv2": cv2.__version__, "python": platform.python_version()},
-           "weights": {"c": args.c_weights, "crop": args.crop_weights}}
+           "weights": {"c": args.c_weights, "crop": args.crop_weights, **({"cls": args.cls_weights} if cls_model else {})}}
     for s, v in stages.items():
         print(f"{s:10s} n={v['n']:4d} median {v['median_ms']:7.2f} ms  p90 {v['p90_ms']:7.2f} ms")
     print(f"FPS end-to-end  B: {fps['B']:.1f}  C: {fps['C']:.1f}   ({nodet} frames without detection)")
+    if "B_cls" in fps:
+        print(f"FPS end-to-end  B + classifier: {fps['B_cls']:.1f}")
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(out, indent=2))
     print(f"-> {args.out}")

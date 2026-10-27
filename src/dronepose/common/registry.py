@@ -48,7 +48,8 @@ def registry_row(run_dir: Path) -> dict:
     rows = _read_results(run_dir)
     row["epochs_done"] = len(rows)
     if rows:
-        best = max(rows, key=lambda r: float(r[_MAP]))
+        metric = _MAP if _MAP in rows[0] else "metrics/accuracy_top1"   # pose runs, else classification runs
+        best = max(rows, key=lambda r: float(r[metric]))
         row["best_epoch"] = int(float(best["epoch"]))
         row["train_hours"] = float(rows[-1]["time"]) / 3600
     elif (run_dir / "history.json").exists():  # DroneKey runs: one row per epoch, no results.csv
