@@ -37,3 +37,16 @@ def test_trajectories_are_intersection():
     y = {"a": [3.0], "z": [9.0]}
     d, _, _ = paired_bootstrap({"x": x, "y": y}, "x", 50)["y"]
     assert d == pytest.approx(2.0)
+
+
+def test_paired_bootstrap_mean_stat():
+    g = {"a": {"t1": [1.0, 1.0], "t2": [0.0, 0.0]}, "b": {"t1": [1.0, 0.0], "t2": [0.0, 0.0]}}
+    out = paired_bootstrap(g, "b", n_boot=200, stat="mean")
+    assert out["a"][0] == pytest.approx(0.25)
+    assert paired_bootstrap(g, "b", n_boot=200) == paired_bootstrap(g, "b", n_boot=200, stat="median")
+
+
+def test_paired_bootstrap_rejects_unknown_stat():
+    g = {"a": {"t1": [1.0]}, "b": {"t1": [0.0]}}
+    with pytest.raises(ValueError, match="stat"):
+        paired_bootstrap(g, "b", n_boot=10, stat="max")

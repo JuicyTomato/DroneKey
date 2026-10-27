@@ -1,4 +1,4 @@
-"""Paired bootstrap over trajectories (scene x drone) for differences of medians."""
+"""Paired bootstrap over trajectories (scene x drone) for differences of medians (or means)."""
 import numpy as np
 
 
@@ -17,13 +17,17 @@ def by_trajectory(results: list[dict], key: str) -> dict[str, list[float]]:
 
 
 def paired_bootstrap(groups: dict[str, dict[str, list[float]]], ref: str, n_boot: int = 2000,
-                     seed: int = 0) -> dict[str, tuple[float, float, float]]:
-    """Per name: (observed median diff vs ref, 2.5th, 97.5th percentile); one resample shared by all names."""
+                     seed: int = 0, stat: str = "median") -> dict[str, tuple[float, float, float]]:
+    """Per name: (observed `stat` diff vs ref, 2.5th, 97.5th percentile); one resample shared by all names.
+    `stat` is "median" (default) or "mean" (e.g. accuracy over 0/1 values)."""
+    if stat not in ("median", "mean"):
+        raise ValueError(f"unknown stat {stat!r}: expected 'median' or 'mean'")
+    agg = np.median if stat == "median" else np.mean
     trajs = sorted(set.intersection(*(set(g) for g in groups.values())))
     rng = np.random.default_rng(seed)
 
     def med(name: str, ts) -> float:
-        return float(np.median(np.concatenate([groups[name][t] for t in ts])))
+        return float(agg(np.concatenate([groups[name][t] for t in ts])))
 
     diffs: dict[str, list[float]] = {n: [] for n in groups}
     for _ in range(n_boot):
