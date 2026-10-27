@@ -10,10 +10,8 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from dronepose.forecast.acro import acro_predict
-from dronepose.forecast.baselines import cv
 from dronepose.forecast.config import ForecastConfig
-from dronepose.forecast.kalman import kalman_predict
+from dronepose.forecast.gaps import acro_g, cv_g, kalman_g
 from dronepose.forecast.noise import add_pose_noise_per_window, noise_rng, sample_mixture_sigmas
 from dronepose.forecast.tuning import _acro_variant
 from dronepose.forecast.windows import Windows
@@ -48,20 +46,18 @@ def base_predictions(windows: Windows, params: dict, cfg: ForecastConfig) -> dic
     """The four bases of BASES, computed exactly as tuning.predict_all computes cv, physics_acro_gen,
     physics_acro_mode and kf_ca (without the other nine methods). Without the mode: phys_mode = phys."""
     w = windows
-    args = (w.obs_t, w.obs_p, w.fut_t)
-    obs_R = np.asarray(w.obs_R, float)
     lam, th, k, kd = _acro_variant(params, "acro_gen")
-    out = {"cv": cv(*args, params["cv_k"]),
-           "phys": acro_predict(w.obs_t, w.obs_p, obs_R, w.fut_t, k, lam, th, kd),
-           "kf_ca": kalman_predict(*args, "ca", params["kf_ca"]["q"], params["kf_ca"]["r"])}
+    out = {"cv": cv_g(w, params["cv_k"]),
+           "phys": acro_g(w, k, lam, th, kd),
+           "kf_ca": kalman_g(w, "ca", params["kf_ca"]["q"], params["kf_ca"]["r"])}
     pred = out["phys"].copy()
     if "mode" in w.meta and "acro_mode" in params:
         modes = np.asarray(w.meta["mode"])
         for mode, v in params["acro_mode"].items():
             sel = modes == mode
             if sel.any():
-                pred[sel] = acro_predict(w.obs_t, w.obs_p[sel], obs_R[sel], w.fut_t, v.get("k", params["acro_k"]),
-                                         v["lam"], v["thrust"], v.get("kd", params["acro_kd"]))
+                pred[sel] = acro_g(w.subset(sel), v.get("k", params["acro_k"]), v["lam"], v["thrust"],
+                                   v.get("kd", params["acro_kd"]))
     out["phys_mode"] = pred
     return out
 

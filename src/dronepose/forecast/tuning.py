@@ -8,14 +8,10 @@ import itertools
 
 import numpy as np
 
-from dronepose.forecast.acro import acro_predict
-from dronepose.forecast.baselines import ca, constant_position, cv
-from dronepose.forecast.ctr import ctra, ctrv
 from dronepose.forecast.config import ForecastConfig
-from dronepose.forecast.kalman import kalman_predict
+from dronepose.forecast.gaps import (acro_g, ca_g, const_g, ctr_g, cv_g, kalman_g, physics_g, rot_hold_g,
+                                     rot_omega_g)
 from dronepose.forecast.metrics import ade_at, metric_group, position_errors
-from dronepose.forecast.orientation import constant_angular_velocity, hold_orientation
-from dronepose.forecast.physics import physics_predict
 from dronepose.forecast.windows import Windows
 
 POSITION_METHODS = ("const", "cv15", "cv", "ca", "kf_cv", "kf_ca", "physics", "ctrv", "ctra", "physics_acro",
@@ -62,16 +58,16 @@ def tune(windows: Windows, cfg: ForecastConfig) -> dict:
             best[method] = (params, score)
 
     for k in cfg.cv_k_grid:
-        run("cv", {"k": k}, cv(w.obs_t, w.obs_p, w.fut_t, k))
+        run("cv", {"k": k}, cv_g(w, k))
     for k in cfg.ca_k_grid:
-        run("ca", {"k": k}, ca(w.obs_t, w.obs_p, w.fut_t, k))
+        run("ca", {"k": k}, ca_g(w, k))
     for model, qs in (("kf_cv", cfg.kf_cv_q_grid), ("kf_ca", cfg.kf_ca_q_grid)):
         for q, r in itertools.product(qs, cfg.kf_r_grid):
-            run(model, {"q": q, "r": r}, kalman_predict(w.obs_t, w.obs_p, w.fut_t, model[3:], q, r))
+            run(model, {"q": q, "r": r}, kalman_g(w, model[3:], q, r))
 
-    for name, fn in (("ctrv", ctrv), ("ctra", ctra)):
+    for name in ("ctrv", "ctra"):
         for k in cfg.ctr_k_grid:
-            run(name, {"k": k}, fn(w.obs_t, w.obs_p, w.fut_t, k))
+            run(name, {"k": k}, ctr_g(w, name, k))
     acro = _tune_acro(w, cfg, H, grid)
     best.update({m: (p, sc) for m, (p, sc) in acro["best"].items()})
 
@@ -109,14 +105,14 @@ def _tune_acro(w: Windows, cfg: ForecastConfig, H: int, grid: list) -> dict:
     when the windows carry the command mode, the best setting per mode (same predictions, objective per mode)."""
     m = metric_group(w)
     wt = _weights(w)[m]
-    obs_t, fut_t, obs_p, obs_R, fut_p = w.obs_t, w.fut_t, w.obs_p[m], np.asarray(w.obs_R[m], float), w.fut_p[m]
+    wm, fut_p = w.subset(m), w.fut_p[m]
     modes = np.asarray(w.meta["mode"])[m] if "mode" in w.meta else None
     combos = list(itertools.product(cfg.acro_k_grid, cfg.acro_kd, cfg.acro_lam_grid, cfg.acro_thrust))
     if (0.0, "constant") not in {(lam, th) for _, _, lam, th in combos}:
         combos += [(k, kd, 0.0, "constant") for k, kd in itertools.product(cfg.acro_k_grid, cfg.acro_kd)]
     errs = {}
     for k, kd, lam, th in combos:
-        e = ade_at(position_errors(acro_predict(obs_t, obs_p, obs_R, fut_t, k, lam, th, kd), fut_p), H)
+        e = ade_at(position_errors(acro_g(wm, k, lam, th, kd), fut_p), H)
         errs[(k, kd, lam, th)] = e
         grid.append({"method": "physics_acro_gen", "k": k, "kd": kd, "lam": lam, "thrust": th,
                      "ade_1s": float(np.average(e, weights=wt))})
@@ -143,33 +139,30 @@ def predict_all(windows: Windows, params: dict, cfg: ForecastConfig) -> dict[str
         raise ValueError(f"tuning parameters without {missing} (written before step 3.1b): "
                          "re-run scripts/forecast/tune_baselines.py")
     w = windows
-    args = (w.obs_t, w.obs_p, w.fut_t)
     out = {
-        "const": constant_position(*args),
-        "cv15": cv(*args, len(w.obs_t)),
-        "cv": cv(*args, params["cv_k"]),
-        "ca": ca(*args, params["ca_k"]),
-        "kf_cv": kalman_predict(*args, "cv", params["kf_cv"]["q"], params["kf_cv"]["r"]),
-        "kf_ca": kalman_predict(*args, "ca", params["kf_ca"]["q"], params["kf_ca"]["r"]),
-        "physics": physics_predict(w.obs_t, w.obs_p, w.obs_u, w.fut_t, params["cv_k"], cfg.g, cfg.max_tilt_deg),
-        "rot_hold": hold_orientation(w.obs_R, len(w.fut_t)),
-        "rot_const_omega": constant_angular_velocity(w.obs_t, w.obs_R, w.fut_t),
+        "const": const_g(w),
+        "cv15": cv_g(w, len(w.obs_t)),
+        "cv": cv_g(w, params["cv_k"]),
+        "ca": ca_g(w, params["ca_k"]),
+        "kf_cv": kalman_g(w, "cv", params["kf_cv"]["q"], params["kf_cv"]["r"]),
+        "kf_ca": kalman_g(w, "ca", params["kf_ca"]["q"], params["kf_ca"]["r"]),
+        "physics": physics_g(w, params["cv_k"], cfg.g, cfg.max_tilt_deg),
+        "rot_hold": rot_hold_g(w),
+        "rot_const_omega": rot_omega_g(w),
     }
-    obs_R = np.asarray(w.obs_R, float)
-    out["ctrv"] = ctrv(*args, _ctr_k(params, "ctrv"))
-    out["ctra"] = ctra(*args, _ctr_k(params, "ctra"))
-    out["physics_acro"] = acro_predict(w.obs_t, w.obs_p, obs_R, w.fut_t, params["acro_k"], 0.0, "constant",
-                                       params["acro_kd"])
+    out["ctrv"] = ctr_g(w, "ctrv", _ctr_k(params, "ctrv"))
+    out["ctra"] = ctr_g(w, "ctra", _ctr_k(params, "ctra"))
+    out["physics_acro"] = acro_g(w, params["acro_k"], 0.0, "constant", params["acro_kd"])
     lam, th, k, kd = _acro_variant(params, "acro_gen")
-    out["physics_acro_gen"] = acro_predict(w.obs_t, w.obs_p, obs_R, w.fut_t, k, lam, th, kd)
+    out["physics_acro_gen"] = acro_g(w, k, lam, th, kd)
     if "mode" in w.meta and "acro_mode" in params:
         pred = out["physics_acro_gen"].copy()          # a mode not seen in tuning keeps the mode-blind setting
         modes = np.asarray(w.meta["mode"])
         for mode, v in params["acro_mode"].items():
             sel = modes == mode
             if sel.any():
-                pred[sel] = acro_predict(w.obs_t, w.obs_p[sel], obs_R[sel], w.fut_t, v.get("k", params["acro_k"]),
-                                         v["lam"], v["thrust"], v.get("kd", params["acro_kd"]))
+                pred[sel] = acro_g(w.subset(sel), v.get("k", params["acro_k"]), v["lam"], v["thrust"],
+                                   v.get("kd", params["acro_kd"]))
         out[MODE_METHOD] = pred
     return out
 

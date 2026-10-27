@@ -3,7 +3,7 @@
 Positions are relative to the last observed position (translation only) and in the trajectory's own units
 (metres, or dataset units for drones without a verified size: see `metric`). All windows share the same times.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -29,9 +29,19 @@ class Windows:
     motion: np.ndarray   # (W,) str
     traj_keys: list[str]
     meta: dict[str, np.ndarray] = field(default_factory=dict)  # one column per meta key shared by all trajectories
+    obs_valid: np.ndarray | None = None  # (W,N) bool: observed frames with a pose (None = all; lost frames ignored)
 
     def __len__(self) -> int:
         return len(self.traj)
+
+    def subset(self, idx) -> "Windows":
+        """The windows `idx` (an index array or a boolean mask), every per-window field cut alike."""
+        cut = lambda a: None if a is None else np.asarray(a)[idx]
+        return replace(self, obs_p=cut(self.obs_p), fut_p=cut(self.fut_p), obs_R=cut(self.obs_R),
+                       fut_R=cut(self.fut_R), obs_u=cut(self.obs_u), fut_u=cut(self.fut_u), last_p=cut(self.last_p),
+                       traj=cut(self.traj), start=cut(self.start), metric=cut(self.metric), scene=cut(self.scene),
+                       drone=cut(self.drone), motion=cut(self.motion), meta={k: cut(v) for k, v in self.meta.items()},
+                       obs_valid=cut(self.obs_valid))
 
 
 def _cut(trajs: list[Trajectory], starts: list[np.ndarray], N: int, H: int, fps: int) -> Windows:
