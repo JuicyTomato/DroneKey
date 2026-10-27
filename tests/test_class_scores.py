@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pytest
 
@@ -7,8 +9,8 @@ from scipy.spatial.transform import Rotation
 
 from dronepose.common.geometry import project
 from dronepose.data.drone_models import load_drone_models
-from dronepose.keypoints.class_scores import combine, fuse_causal, log_scores, reproj_per_class, scores_c1, \
-    scores_cm, scores_geom
+from dronepose.keypoints.class_scores import combine, fuse_causal, load_probs, log_scores, probs_row, \
+    reproj_per_class, scores_c1, scores_cm, scores_geom, scores_k
 from tests.fixtures.fake_dataset import FAKE_K
 from dronepose.keypoints.detections import Detection, class_causal_vote
 
@@ -106,3 +108,26 @@ def test_scores_cm_keeps_overlapping_classes():
     boxes = {"f": [[0, 0, 10, 10, 0.8, 2], [0, 0, 10, 9, 0.5, 5], [0, 0, 10, 10, 0.4, 2], [50, 50, 60, 60, 0.7, 0]],
              "g": []}
     assert scores_cm(boxes, 0.5) == {"f": {"03": 0.8, "06": 0.5}}
+
+
+NAMES = {0: "08", 1: "01", 2: "02", 3: "03", 4: "04", 5: "05", 6: "06"}
+
+
+def test_probs_row_maps_by_name():
+    p = np.array([0.7, 0.1, 0.05, 0.05, 0.04, 0.03, 0.03])
+    row = probs_row("f", p, NAMES)
+    assert row["frame_id"] == "f" and row["probs"]["08"] == pytest.approx(0.7) and row["probs"]["01"] == pytest.approx(0.1)
+    assert probs_row("g", None, NAMES) == {"frame_id": "g", "probs": None}
+
+
+def test_probs_row_rejects_unknown_names():
+    with pytest.raises(ValueError, match="names"):
+        probs_row("f", np.ones(7) / 7, {i: str(i) for i in range(7)})
+
+
+def test_load_probs_and_scores_k(tmp_path):
+    path = tmp_path / "p.jsonl"
+    rows = [probs_row("f", np.array([0.7, 0.1, 0.05, 0.05, 0.04, 0.03, 0.03]), NAMES), probs_row("g", None, NAMES)]
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    s = scores_k(load_probs(path))
+    assert set(s) == {"f"} and max(s["f"], key=s["f"].get) == "08"

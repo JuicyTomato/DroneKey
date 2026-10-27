@@ -48,6 +48,26 @@ def scores_cm(boxes: dict[str, list[list[float]]], iou_min: float) -> FrameScore
     return out
 
 
+def probs_row(frame_id: str, probs: np.ndarray | None, names: dict[int, str]) -> dict:
+    """JSONL row of the crop classifier: probabilities keyed by drone name (never by index)."""
+    if set(names.values()) != set(DRONE_IDS):
+        raise ValueError(f"classifier names {sorted(names.values())} are not the drones {list(DRONE_IDS)}")
+    if probs is None:
+        return {"frame_id": frame_id, "probs": None}
+    return {"frame_id": frame_id, "probs": {names[i]: float(p) for i, p in enumerate(np.asarray(probs, float))}}
+
+
+def load_probs(path: Path) -> dict[str, dict[str, float] | None]:
+    with open(path) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    return {row["frame_id"]: row["probs"] for row in rows}
+
+
+def scores_k(probs: dict[str, dict[str, float] | None]) -> FrameScores:
+    """Crop classifier: softmax probability per class; frames without a crop have no score."""
+    return {fid: dict(p) for fid, p in probs.items() if p is not None}
+
+
 def log_scores(s: FrameScores, a_min: float) -> FrameScores:
     """log(max(a, a_min)) over all 7 classes; a class missing from a frame counts as a_min."""
     return {fid: {c: float(np.log(max(sc.get(c, 0.0), a_min))) for c in DRONE_IDS} for fid, sc in s.items()}
