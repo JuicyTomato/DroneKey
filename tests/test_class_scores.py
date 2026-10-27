@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation
 from dronepose.common.geometry import project
 from dronepose.data.drone_models import load_drone_models
 from dronepose.keypoints.class_scores import combine, fuse_causal, log_scores, reproj_per_class, scores_c1, \
-    scores_geom
+    scores_cm, scores_geom
 from tests.fixtures.fake_dataset import FAKE_K
 from dronepose.keypoints.detections import Detection, class_causal_vote
 
@@ -99,3 +99,10 @@ def test_geom_log_and_quad():
     assert scores_geom({"f": {"03": 2.0}}, "quad", sigma=1.0)["f"]["03"] == pytest.approx(-2.0)
     with pytest.raises(ValueError, match="form"):
         scores_geom(r, "abs")
+
+
+def test_scores_cm_keeps_overlapping_classes():
+    # class index 2 = "03", 5 = "06", 0 = "01" (CLASS_IDS order)
+    boxes = {"f": [[0, 0, 10, 10, 0.8, 2], [0, 0, 10, 9, 0.5, 5], [0, 0, 10, 10, 0.4, 2], [50, 50, 60, 60, 0.7, 0]],
+             "g": []}
+    assert scores_cm(boxes, 0.5) == {"f": {"03": 0.8, "06": 0.5}}

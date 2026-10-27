@@ -10,7 +10,7 @@ from dronepose.data.crops import (CROP_SIZE, CropBox, crop_box_from_det_box, cro
 from dronepose.data.export_yolo import yolo_label_line
 from dronepose.eval.detection import detection_metrics, iou_xyxy
 from dronepose.keypoints.detections import Detection
-from dronepose.keypoints.two_stage import crop_from_detection, top_detection_row
+from dronepose.keypoints.two_stage import all_boxes, crop_from_detection, top_detection_row
 
 KP = np.array([[900.0, 500.0], [1100.0, 500.0], [1080.0, 560.0], [920.0, 560.0]])
 KP_EDGE = np.array([[10.0, 500.0], [210.0, 500.0], [190.0, 560.0], [30.0, 560.0]])   # label box clipped at x = 0
@@ -108,3 +108,10 @@ def test_gt_box_crops_reproduce_setting_a():
         crop, _ = crop_from_detection(img, label_box_xyxy(np.array(r["kpts2d"], float)))
         ref = cv2.imread(str(crops / f"{r['frame_id']}.jpg"))
         assert np.abs(crop.astype(int) - ref.astype(int)).mean() < 2
+
+
+def test_all_boxes_sorted_and_scaled():
+    xyxy = np.array([[0, 0, 10, 10], [1, 2, 3, 4]], float)
+    out = all_boxes(xyxy, np.array([0.3, 0.8]), np.array([2.0, 5.0]), 3.0)
+    assert out == [[3.0, 6.0, 9.0, 12.0, 0.8, 5.0], [0.0, 0.0, 30.0, 30.0, 0.3, 2.0]]
+    assert all_boxes(np.zeros((0, 4)), np.zeros(0), np.zeros(0), 3.0) == []

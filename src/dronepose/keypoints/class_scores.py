@@ -2,21 +2,50 @@
 
 `FrameScores` maps frame_id -> {drone: score}; a frame that is missing has no score. Higher is better.
 """
+import json
+from pathlib import Path
+
 import numpy as np
 
 from dronepose.data.drone_models import DroneModel
+from dronepose.data.export_yolo import CLASS_IDS
 from dronepose.data.sixdronesyn import DRONE_IDS
+from dronepose.eval.detection import iou_xyxy
 from dronepose.keypoints.detections import Detection
 from dronepose.pose.replay import _by_sequence
 from dronepose.pose.solvers import solve
 
 FrameScores = dict[str, dict[str, float]]
 TEMPORAL = ("F", "S")
+_DRONE_OF_CLASS = {i: d for d, i in CLASS_IDS.items()}
 
 
 def scores_c1(dets: dict[str, Detection], weighted: bool) -> FrameScores:
     """Top box of C only: its class scores 1.0 (or its confidence when `weighted`)."""
     return {fid: {d.drone: d.conf if weighted else 1.0} for fid, d in dets.items() if d.drone is not None}
+
+
+def load_boxes(path: Path) -> dict[str, list[list[float]]]:
+    """`boxes` of every row of an all-boxes export of C (rows without the field give an empty list)."""
+    with open(path) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    return {row["frame_id"]: row.get("boxes") or [] for row in rows}
+
+
+def scores_cm(boxes: dict[str, list[list[float]]], iou_min: float) -> FrameScores:
+    """Several boxes of C: per class, the highest confidence among boxes with IoU >= iou_min with the top box."""
+    out: FrameScores = {}
+    for fid, bs in boxes.items():
+        if not bs:
+            continue
+        top = max(bs, key=lambda b: b[4])
+        sc: dict[str, float] = {}
+        for b in bs:
+            if iou_xyxy(b[:4], top[:4]) >= iou_min:
+                c = _DRONE_OF_CLASS[int(b[5])]
+                sc[c] = max(sc.get(c, 0.0), float(b[4]))
+        out[fid] = sc
+    return out
 
 
 def log_scores(s: FrameScores, a_min: float) -> FrameScores:

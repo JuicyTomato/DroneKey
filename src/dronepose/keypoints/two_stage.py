@@ -19,6 +19,12 @@ def top_detection_row(frame_id: str, xyxy: np.ndarray, conf: np.ndarray, cls: np
             "box_conf": float(conf[j]), "cls": int(cls[j])}
 
 
+def all_boxes(xyxy: np.ndarray, conf: np.ndarray, cls: np.ndarray, scale: float) -> list[list[float]]:
+    """Every detection as [x1, y1, x2, y2, conf, cls] (coordinates x scale), by decreasing confidence."""
+    order = np.argsort(-np.asarray(conf, float), kind="stable")
+    return [[*(float(v) * scale for v in xyxy[j]), float(conf[j]), float(cls[j])] for j in order]
+
+
 def crop_from_detection(img: np.ndarray, xyxy, jpeg_quality: int = 95) -> tuple[np.ndarray, CropBox]:
     """Crop around a detected box with the setting-A rule, through JPEG as the training crops were."""
     box = crop_box_from_det_box(np.asarray(xyxy, float))
