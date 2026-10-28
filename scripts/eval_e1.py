@@ -7,10 +7,14 @@ SPEC = NAME=KPTS.jsonl[,det=DETS.jsonl][,cls=gt|frame|causal]
   det: JSONL with boxes (box_conf becomes the AP score); cls: drone class given to the 3D model
   (gt = true drone, frame = detected class, causal = running majority vote; frame/causal need det).
 --det-metrics: detection quality (IoU with the label box, class accuracy, no-detection rate), saved under "detection".
+--gravity: gravity gate of `global` (camera-frame up = -y, candidates tilted > 70 deg excluded); off in the protocol,
+  used only for a secondary row.
 """
 import argparse
 import json
 from pathlib import Path
+
+import numpy as np
 
 from dronepose.data.canonical import read_jsonl
 from dronepose.data.drone_models import load_drone_models
@@ -21,6 +25,7 @@ from dronepose.keypoints.detections import class_causal_vote, class_per_frame, l
 from dronepose.pose.replay import check_no_test, load_keypoints, replay
 
 ROWS = ("all", "no08", "08")
+GRAVITY_UP = np.array([0.0, -1.0, 0.0])   # camera-frame up (y points down), as in diagnose_disambiguation.py
 SHOWN = ("n_frames", "coverage", "median_rot_sym", "p90_rot_sym", "median_t_camera", "median_t_meters",
          "flip_rate", "px_median", "px_p90", "pck_5px", "identity", "oks_ap", "ap_paper", "sr90")
 
@@ -51,7 +56,7 @@ def _fmt(v) -> str:
 def run(specs: list[str], split: str = "val", allow_test: bool = False, breakdown: bool = False,
         ref: str | None = None, groups: list[str] | None = None, records: list[dict] | None = None,
         canonical: Path | None = None, models_path: Path = Path("configs/drone_models.json"),
-        det_metrics: list[str] | None = None) -> dict:
+        det_metrics: list[str] | None = None, gravity: bool = False) -> dict:
     """Evaluate every spec on `split` and return {models, bootstrap, groups}; rejects test records without allow_test."""
     parsed = [parse_spec(s) for s in specs]
     names = [p["name"] for p in parsed]
@@ -61,7 +66,7 @@ def run(specs: list[str], split: str = "val", allow_test: bool = False, breakdow
         records = read_jsonl(canonical or Path(f"data/processed/canonical_{split}.jsonl"))
     check_no_test(records, allow_test)
     models = load_drone_models(models_path)
-    out: dict = {"split": split, "models": {}, "bootstrap": {}, "groups": {}}
+    out: dict = {"split": split, "gravity": gravity, "models": {}, "bootstrap": {}, "groups": {}}
     flat: dict[str, list[dict]] = {}
     for p in parsed:
         kpts = load_keypoints(Path(p["kpts"]))
@@ -69,7 +74,7 @@ def run(specs: list[str], split: str = "val", allow_test: bool = False, breakdow
         model_drone = None
         if p["cls"] != "gt":
             model_drone = (class_per_frame if p["cls"] == "frame" else class_causal_vote)(records, dets)
-        res = replay(records, kpts, models, "global", model_drone=model_drone)
+        res = replay(records, kpts, models, "global", model_drone=model_drone, up=GRAVITY_UP if gravity else None)
         flat[p["name"]] = [r for rs in res.values() for r in rs]
         scores = {fid: d.conf for fid, d in dets.items()} if dets else None
         out["models"][p["name"]] = {"spec": p, "table": e1_table(flat[p["name"]], records, kpts, scores, breakdown)}
@@ -129,10 +134,11 @@ def main(argv=None) -> None:
     ap.add_argument("--ref", default=None, help="reference model for the bootstrap (default: first SPEC)")
     ap.add_argument("--group", action="append", default=[], metavar="NAME=N1,N2,N3")
     ap.add_argument("--det-metrics", action="append", default=[], metavar="NAME=DETS.jsonl")
+    ap.add_argument("--gravity", action="store_true", help="gravity gate of global (secondary row, off in the protocol)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     out = run(args.specs, args.split, args.allow_test, args.breakdown, args.ref, args.group,
-              det_metrics=args.det_metrics)
+              det_metrics=args.det_metrics, gravity=args.gravity)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(out, indent=2))
 

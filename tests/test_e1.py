@@ -133,3 +133,22 @@ def test_eval_rejects_test_split(tmp_path):
     records = [rec("06_01_a_1", "01", "06", split="test")]
     with pytest.raises(ValueError, match="test split"):
         eval_e1.run(["A=missing.jsonl"], split="test", allow_test=False, records=records)
+
+
+@pytest.mark.parametrize("gravity", [False, True])
+def test_gravity_flag_reaches_replay(tmp_path, monkeypatch, gravity):
+    seen = {}
+
+    def fake_replay(*args, **kwargs):
+        seen["up"] = kwargs.get("up")
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(eval_e1, "replay", fake_replay)
+    path = tmp_path / "k.jsonl"
+    path.write_text(json.dumps({"frame_id": "14_01_a_1", "kpts_pred": kp().tolist()}) + "\n")
+    with pytest.raises(RuntimeError, match="stop"):
+        eval_e1.run([f"A={path}"], records=[rec("14_01_a_1", "01")], gravity=gravity)
+    if gravity:
+        assert np.array_equal(seen["up"], [0.0, -1.0, 0.0])
+    else:
+        assert seen["up"] is None
