@@ -33,3 +33,14 @@ def test_build_imagefolder_limit(tmp_path):
             (crops / "images" / "train" / f"{fid}.jpg").write_bytes(b"jpg")
             f.write(json.dumps({"frame_id": fid}) + "\n")
     assert build_imagefolder(crops, tmp_path / "cls", splits=("train",), limit=2) == {"train": 2}
+
+
+def test_build_imagefolder_copy_mode_writes_regular_files(tmp_path):
+    crops = tmp_path / "yolo_crops"
+    (crops / "images" / "train").mkdir(parents=True)
+    fid = "01_04_01_000_0001"
+    (crops / "images" / "train" / f"{fid}.jpg").write_bytes(b"jpg")
+    (crops / "crops_train.jsonl").write_text(json.dumps({"frame_id": fid}) + "\n")
+    assert build_imagefolder(crops, tmp_path / "cls", splits=("train",), copy=True) == {"train": 1}
+    out = tmp_path / "cls" / "train" / "04" / f"{fid}.jpg"
+    assert out.is_file() and not out.is_symlink() and out.read_bytes() == b"jpg"

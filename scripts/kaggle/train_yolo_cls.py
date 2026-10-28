@@ -5,7 +5,9 @@ Kaggle:  !pip install -q ultralytics==8.4.178
 The val split is only logged by Ultralytics: the checkpoint is last.pt after a fixed number of epochs (30), so the
 val stays clean for the class grid (spec 2026-10-27-classe-drone-design.md, 5.1). Augmentation as recipe w1 where it
 applies to classification (horizontal flip, HSV, scale). Writes <project>/<name>/run_info.json before training.
-Local smoke run: --data-root data/processed/yolo_crops --limit 200 --epochs 1 --device mps --project <dir>.
+The train and val crops (never the test ones) are first copied to --folder on local disk: the Kaggle input mount is
+slow per file and the classifier reads every image at every epoch.
+Local smoke run: --data-root data/processed/yolo_crops --limit 200 --epochs 1 --device mps --project <dir> --link.
 """
 import argparse
 import json
@@ -16,7 +18,7 @@ from pathlib import Path
 CODE = Path(__file__).resolve().parents[2]            # folder that holds src/ and scripts/
 sys.path.insert(0, str(CODE / "src"))                  # dronepose without pip install
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # kaggle_paths
-FOLDER = Path("/tmp/cls_crops")                        # image-folder of symlinks (local disk)
+FOLDER = Path("/tmp/cls_crops")                        # image-folder on local disk (crops copied there)
 W1_CLS = {"fliplr": 0.5, "hsv_h": 0.015, "hsv_s": 0.7, "hsv_v": 0.4, "scale": 0.3}
 
 
@@ -32,7 +34,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--name", default="cls_s_s0")
     ap.add_argument("--project", default="/kaggle/working/runs")
     ap.add_argument("--data-root", default=None, help="yolo_crops folder; default: found in the Kaggle datasets")
-    ap.add_argument("--folder", default=str(FOLDER), help="where the image-folder of symlinks is built")
+    ap.add_argument("--folder", default=str(FOLDER), help="where the image-folder is built")
+    ap.add_argument("--link", action="store_true", help="symlink instead of copying the crops (local smoke runs)")
     ap.add_argument("--limit", type=int, default=None, help="crops per split (smoke runs only)")
     ap.add_argument("--device", default=None)
     return ap.parse_args(argv)
@@ -51,7 +54,7 @@ def main() -> None:
     else:
         from kaggle_paths import find_dataset
         crops = find_dataset("dronepose-cache") / "yolo_crops"
-    counts = build_imagefolder(crops, Path(args.folder), limit=args.limit)
+    counts = build_imagefolder(crops, Path(args.folder), limit=args.limit, copy=not args.link)   # train + val only
     print(f"[{time.time() - t0:7.1f}s] image-folder {args.folder}: {counts}", flush=True)
     try:
         model, used = YOLO(args.model), args.model
