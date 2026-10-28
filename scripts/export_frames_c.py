@@ -7,7 +7,9 @@ usage (ultralytics venv, from the repo root):
 Row: {"frame_id", "kpts_pred", "box", "box_conf", "cls"}; frames without detection stay NaN / box null.
 --all-boxes: predict at conf --conf-min and add "boxes" ([x1, y1, x2, y2, conf, cls] of every detection, frame
 pixels); the top-box fields still use only boxes with conf >= 0.25 (the Ultralytics default), so they match the
-export without the option.
+export without the option. Use --batch 8 with --all-boxes: at conf 0.01 the Ultralytics NMS can exceed its time limit
+per batch (2 s + 0.05 s per image) and silently return no boxes for the last images of a batch (seen at batch 32:
+39 of 12600 val frames empty).
 """
 import argparse
 import json
