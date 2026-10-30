@@ -594,6 +594,8 @@ Lettura: sulla val siamo vicini al paper (SR90 uguale, AP −0.5/−0.7), sul te
 
 **FPS su T4 (Kaggle, batch 1, float32, 2026-10-29; `experiments/dronekey/fps_t4_2026-10-29/`).** DroneKey (s1 `best.pt`) e YOLO26s misurati **nella stessa sessione**, uno dopo l'altro: C 15.94 ms; ritaglio + JPEG 1.45 / 1.47; rete sul crop **DroneKey 14.72 contro YOLO26s 15.56 ms**; IPPE 0.31 / 0.32 → **B 30.9 contro 30.0 FPS: velocità pari**. La T4 varia ~25% tra sessioni (stessa rete DroneKey 11.82 ms in una sessione precedente; YOLO B 39.9 FPS del 2026-10-20 su un'altra istanza): confrontare solo numeri della stessa sessione. Calcolo (`flops.json`, `torch.utils.flop_counter`, FLOPs = 2 × MAC): DroneKey 76.0 M parametri, 13.3 GFLOPs a 224 contro rete crop YOLO26s 10.6 M, 3.9 GFLOPs a 256. A batch 1 la latenza non segue i FLOPs (YOLO piccolo dominato da costi fissi e post-processing di Ultralytics). Trappola: l'account Kaggle attuale è `enricotazzer` (non ha `dronepose-weights`; per YOLO usare `dronepose-bench`, che ha `c.pt` e `crop.pt`).
 
+**Protocollo del test di 6DroneSyn, fissato prima di guardarlo (decisione dell'utente di procedere, 2026-10-30).** Una sola esecuzione, niente scelte dopo. Checkpoint già scelti sulla val: s0 `last_w.pt`, s1 `best.pt`, s2 `last_w.pt`. Export con `--allow-test`: A (crop in cache) e B (PNG originali, box di C `experiments/results/keypoints/test/keypoints_test_c_best.jsonl`, lo stesso file del B di YOLO26s). **Riga principale:** `eval_e1.py --split test --allow-test`, setting B, classe vera, `global` senza gravità, 3 semi DroneKey contro i 3 semi YOLO26s già valutati sul test (`keypoints_test_b_s{0,1,2}.jsonl`), media ± std per gruppo, bootstrap appaiato per traiettoria contro `yolo_s0`. **Righe secondarie:** stessa valutazione con `--gravity`; setting A (DroneKey contro `keypoints_test_a_s*`, riportare `ap_paper` e non `oks_ap`). Metriche come sulla val (rotazione mediana, p90, traslazione, copertura, flip senza 08, px, drone 08). I keypoint di YOLO26s sul test non si ricalcolano.
+
 **Stato e prossimi passi.** Fatti: codice, scala G0–G6, 2DroneKey, 3 semi finali, scelta dei checkpoint, E1 sulla val (con riga secondaria di gravità), analisi dei flip, FPS su T4, capitolo `PerTesi/12_DroneKey`. Prossimo: test di 6DroneSyn una volta sola su decisione dell'utente (stesso protocollo, con la riga di gravità, checkpoint s0 `last_w.pt`, s1 `best.pt`, s2 `last_w.pt`).
 
 ## 6quaterdecies. YOLO26s: chiusura dell'MVP del sotto-progetto A — ricetta, 3 semi, FPS, test (2026-10-20/26)
@@ -723,7 +725,46 @@ Spec: `docs/superpowers/specs/2026-10-27-fase3-archivio-e4-design.md` (criteri D
 - pose del drone 08 molto peggiori.
 - **dalla revisione finale:** le stime puntuali di E4 pesano le finestre, non le traiettorie (come nel 3.2; sulla val la scena 14 pesa ~2/3; sul test, tutte da 120 frame, le due letture coincidono); `r_los` = 10 al bordo della griglia in fold03 e 08_final (il braccio ha perso sulla val); il ripiego di fascia di distanza non è mai scattato.
 
-**Prossimi passi possibili (non decisi):** 3.6 ablation; aggiornare E1 a IPPE + LM + `global`; migliorare la classificazione del drone (pesa sul test); E5.
+**Prossimi passi possibili (non decisi):** 3.6 ablation; aggiornare E1 a IPPE + LM + `global`; ~~migliorare la classificazione del drone (pesa sul test)~~ (2026-10-30: fatto sulla val, §6septdecies); E5.
+
+## 6septdecies. Classe del drone: aspetto × tempo × geometria (2026-10-27/30)
+
+Spec: `docs/superpowers/specs/2026-10-27-classe-drone-design.md` (commit `9535c9a`); piano: `docs/superpowers/plans/2026-10-27-classe-drone.md` (10 task, Native; commit `7ede115`…`48bcbd4`, revisione finale con 2 correzioni in `88d4487`). Codice: `src/dronepose/keypoints/class_scores.py` (fonti e fusione causale), `src/dronepose/eval/class_eval.py`, `src/dronepose/eval/class_select.py` (griglia, taratura leave-one-scene-out, regola), `src/dronepose/keypoints/cls_data.py`; script `scripts/class/{geom_scores,export_crop_cls,eval_class,e4b_class}.py`, `scripts/kaggle/train_yolo_cls.py`, `scripts/package_bench.py`. Estesi con default invariati (test d'identità): `paired_bootstrap(stat=)`, `registry_row`, `export_frames_c.py --all-boxes`, `bench_fps.py --cls-weights`, `export_poses.py --class-map`, `pipeline_errors(with_keys=)`. Risultati in `experiments/class/` (fuori da git). Capitolo tesi: `PerTesi/16_Classe_del_drone`. Test **non** usato.
+
+**Domanda (dell'utente):** quanto vale ciascuna fonte di informazione per la classe del drone (aspetto, tempo, geometria) e quale pipeline dà la qualità migliore. Griglia sulla val di 27 celle: aspetto C1 (box più confidente di C), CM (più box di C), K (classificatore YOLO26s-cls sul crop di B, 3 semi su Kaggle, 30 epoche, `last.pt`), K+CM × tempo F (frame), W (somma lineare), L (somma di log), V (maggioranza di oggi) × geometria (errore di riproiezione IPPE + LM con i 7 modelli 3D) sì/no. Pesi tarati leave-one-scene-out (03, 09, 14), semi uniti. Tre livelli: classe per frame, posa (IPPE + LM + `global`), E4b.
+
+**Risultati (val, media dei 3 semi):**
+
+| Cella | Classe per frame | Sequenze giuste | Rotazione / p90 | t camera | E4b R-CV-6D 1 s |
+|---|---|---|---|---|---|
+| C1+V (oggi) | 86.7% | 90.5% | 1.585° / 6.20° | 0.0407 | 0.178 m |
+| **C1+W+g** (scelta della regola) | 92.2% | 95.2% | 1.548° / 5.75° | 0.0377 | 0.163 m (−0.015 [−0.027, −0.006]) |
+| **K+L+g** (migliore misurata) | **99.6%** | 100% | 1.506° / 4.69° | 0.0348 | **0.153 m** (−0.025 [−0.044, −0.010]) |
+| Classe vera | 100% | 100% | 1.504° / 4.68° | 0.0345 | 0.152 m |
+
+**Scomposizione (punti di classe per frame, IC per seme):** tempo, somma contro frame singolo +5.3 (IC con lo zero); somma lineare contro maggioranza +0.3; aspetto CM contro C1 +0.2 (nulla); **aspetto K contro C1 +12.1** ([+1.5, +27] in tutti i semi); geometria su C1+W +5.2 (zero escluso in tutti i semi), su K+W solo +0.3; geometria da sola 74.7% (peggio di oggi, flip 3.6%). Accuratezza per detection: C 81.8%, K 97.5–97.6% (03 ~95%, 04 88–95%).
+
+**Decisione dell'utente (2026-10-30): si tengono entrambe.** La regola pre-registrata (§6 della spec: K vince solo se meglio di tutte le celle senza modelli in più in tutti e 3 i semi) sceglie **C1+W+g**: K+L+g contro C1+W+g ha IC [−0.001, +0.167] nel seme 0 (+0.003 e +0.001 negli altri). K+L+g è riportata come **migliore misurata**, non come scelta della regola. Parametri congelati per un eventuale test in `experiments/class/eval/final_params.json` (C1+W+g: `w_g` 0.1, quad, σ 1; K+L+g: `a_min` 0.1, `w_g` 1, log).
+
+**Costi:** geometria 1.05 ms/frame su CPU (M1); classificatore 5.4 ms su T4 → B + classificatore **30.2 FPS** (soglia 30; B senza 36.2 nella stessa sessione, 39.9 a ottobre).
+
+**Trappole trovate:**
+1. `export_frames_c.py --all-boxes` a batch 32 con conf 0.01: la NMS di Ultralytics supera il suo limite di tempo (2 s + 0.05 s × batch) e restituisce **senza errore** zero box per le ultime immagini del batch (39/12 600 frame). Con `--batch 8` l'export coincide al 100% con il file di oggi.
+2. Il training del classificatore su Kaggle rilegge ogni immagine a ogni epoca: i crop vanno copiati su disco locale (`build_imagefolder(copy=True)`).
+3. Su Kaggle l'Output mostrato può essere quello della versione precedente: il primo download del seme 2 era il seme 1 (stesso md5). Controllare `run_info.json`.
+4. `fps_cls.json` va in `experiments/class/cls_runs/` (altrimenti le celle K risultano "non misurate" ed escluse).
+
+**Limiti:**
+- val con metà del problema del test (13% contro ~26% di frame sbagliati): intervalli larghi (21 traiettorie, errori concentrati in poche);
+- C1+W+g sceglie `w_g` 0.1, il bordo basso della griglia, in tutti i fold (griglia non cambiata dopo i risultati);
+- il classificatore impara la texture dei mesh sintetici: è il componente più a rischio sul reale; la geometria non dipende dall'aspetto (ipotesi da verificare in E2);
+- latenza di K al limite della soglia;
+- reti e parametri E4 tarati con l'archivio della classe di oggi; E4b confrontato sulle stesse 29 484 finestre;
+- la diagnosi della spec (87% → 92% con fusione grezza) è stata vista prima della spec.
+
+**Spazio su disco (2026-10-28, richiesta dell'utente):** spostati su `/Volumes/MakeMePasta/DroneKey_offload_20261028/` `data/kaggle_cache`, `data/dronepose-cache.zip` (+ `.sha256`, verificato), `data/dronekey-crops.tar` e `archive/yolo_frames.tar` (copia identica di `data/processed/yolo_frames`). Da riportare sul Mac quando c'è spazio.
+
+**Prossimi passi possibili (decide l'utente):** riporto sul test di entrambe le varianti con i parametri congelati (06, 07, una volta, senza scelte); E2 sul reale per vedere quale fonte regge meglio.
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
