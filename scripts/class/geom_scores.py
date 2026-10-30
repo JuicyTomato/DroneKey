@@ -3,7 +3,8 @@
 Usage (project venv, from the repo root):
   python scripts/class/geom_scores.py --kpts KPTS.jsonl --out experiments/class/geom/geom_val_sN.jsonl
 Row: {"frame_id", "reproj_px": {drone: px} | null}; null when the keypoints are missing / not finite or a PnP failed.
-Prints the mean time per frame of the 7 PnP (cost of the geometric source). Val only.
+Prints the mean time per frame of the 7 PnP (cost of the geometric source). The test split needs --allow-test
+(with --canonical data/processed/canonical_test.jsonl).
 """
 import argparse
 import json
@@ -24,9 +25,10 @@ def main(argv=None) -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--canonical", default="data/processed/canonical_val.jsonl")
     ap.add_argument("--models", default="configs/drone_models.json")
+    ap.add_argument("--allow-test", action="store_true")
     args = ap.parse_args(argv)
     records = read_jsonl(Path(args.canonical))
-    check_no_test(records, allow_test=False)
+    check_no_test(records, allow_test=args.allow_test)
     models = load_drone_models(Path(args.models))
     kpts = load_keypoints(Path(args.kpts))
     out = Path(args.out)

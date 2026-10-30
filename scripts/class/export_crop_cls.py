@@ -2,8 +2,9 @@
 
 usage (ultralytics venv, from the repo root):
   python scripts/class/export_crop_cls.py --det DETS.jsonl --weights W --out OUT.jsonl [--device mps] [--threads 8]
-Row: {"frame_id", "probs": {drone: p} | null}; frames where C found nothing get null. Val only; PNGs are read from
-`image_path` of the canonical records (read-only). Probabilities are keyed by the model's class names.
+Row: {"frame_id", "probs": {drone: p} | null}; frames where C found nothing get null. The test split needs --allow-test
+(with --canonical data/processed/canonical_test.jsonl). PNGs are read from `image_path` of the canonical records
+(read-only). Probabilities are keyed by the model's class names.
 """
 import argparse
 import json
@@ -31,11 +32,12 @@ def main(argv=None) -> None:
     ap.add_argument("--device", default="mps")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--allow-test", action="store_true")
     args = ap.parse_args(argv)
 
     with open(args.canonical) as f:
         records = [json.loads(l) for l in f if l.strip()]
-    check_no_test(records, allow_test=False)
+    check_no_test(records, allow_test=args.allow_test)
     recs = {r["frame_id"]: r for r in records}
     with open(args.det) as f:
         rows = [json.loads(l) for l in f if l.strip()][:args.limit]
