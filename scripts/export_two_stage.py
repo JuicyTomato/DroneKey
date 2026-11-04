@@ -2,7 +2,7 @@
 -> crop pose model -> keypoints in frame pixels. Frames where C found nothing stay as no detection.
 
 usage (ultralytics venv, from the repo root):
-  python scripts/export_two_stage.py --det DETS.jsonl --weights W --split val|test --out OUT.jsonl
+  python scripts/export_two_stage.py --det DETS.jsonl --weights W --split val|test|mav6d --out OUT.jsonl
       [--device mps] [--gt-box] [--limit N] [--threads 8]
 --gt-box: take the label box from the GT keypoints instead of C (must reproduce the setting-A crops).
 PNGs are read from `image_path` of the canonical records (read-only).
@@ -29,7 +29,7 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--det", required=True, help="JSONL of setting C (box per frame)")
     ap.add_argument("--weights", required=True)
-    ap.add_argument("--split", required=True, choices=["val", "test"])
+    ap.add_argument("--split", required=True, choices=["val", "test", "mav6d"])
     ap.add_argument("--out", required=True)
     ap.add_argument("--canonical", default=None, help="default data/processed/canonical_{split}.jsonl")
     ap.add_argument("--device", default="mps")

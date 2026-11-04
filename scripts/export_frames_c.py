@@ -1,7 +1,7 @@
 """Setting C: full 640x360 frames -> keypoints + box + class in 1920x1080 frame pixels (top box by confidence).
 
 usage (ultralytics venv, from the repo root):
-  python scripts/export_frames_c.py --weights W --split val|test --out OUT.jsonl
+  python scripts/export_frames_c.py --weights W --split val|test|mav6d --out OUT.jsonl
       [--frames-dir data/processed/yolo_frames]
       [--device mps] [--batch 32] [--limit N] [--all-boxes [--conf-min 0.01]]
 Row: {"frame_id", "kpts_pred", "box", "box_conf", "cls"}; frames without detection stay NaN / box null.
@@ -29,7 +29,7 @@ DEFAULT_CONF = 0.25   # Ultralytics predict default: threshold of the top-box fi
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--weights", required=True)
-    ap.add_argument("--split", required=True, choices=["val", "test"])
+    ap.add_argument("--split", required=True, choices=["val", "test", "mav6d"])
     ap.add_argument("--frames-dir", default="data/processed/yolo_frames")
     ap.add_argument("--out", required=True)
     ap.add_argument("--device", default="mps")
