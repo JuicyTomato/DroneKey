@@ -39,6 +39,7 @@ def detection_metrics(dets: dict[str, Detection], records: list[dict]) -> dict:
         "iou_median": float(np.median(iou)) if len(iou) else None,
         "iou_p10": float(np.percentile(iou, 10)) if len(iou) else None,
         "iou_ge_05": float(np.mean(iou >= 0.5)) if len(iou) else None,
+        "recall_05": float(np.sum(iou >= 0.5) / n) if n else None,
         "class_acc": float(np.mean(correct)) if correct else None,
         "class_acc_by_drone": {d: float(np.mean(v)) for d, v in sorted(by_drone.items())},
         "confusion": {t: dict(sorted(p.items())) for t, p in sorted(confusion.items())},

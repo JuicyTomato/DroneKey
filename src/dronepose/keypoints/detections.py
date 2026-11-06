@@ -65,3 +65,9 @@ def class_causal_vote(records: list[dict], dets: dict[str, Detection]) -> dict[s
                 votes[c] += 1
             out[r["frame_id"]] = votes.most_common(1)[0][0] if votes else first   # insertion order breaks ties
     return out
+
+
+def ids_in(path: Path) -> set[str]:
+    """Frame ids of a JSONL file."""
+    with open(path) as f:
+        return {json.loads(line)["frame_id"] for line in f if line.strip()}

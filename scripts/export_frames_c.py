@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))   # dronepo
 import numpy as np  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 
+from dronepose.keypoints.detections import ids_in  # noqa: E402
 from dronepose.keypoints.two_stage import all_boxes, top_detection_row  # noqa: E402
 
 DEFAULT_CONF = 0.25   # Ultralytics predict default: threshold of the top-box fields
@@ -35,6 +36,7 @@ def main(argv=None) -> None:
     ap.add_argument("--device", default="mps")
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--ids-from", default=None, help="canonical JSONL: keep only its frames")
     ap.add_argument("--all-boxes", action="store_true")
     ap.add_argument("--conf-min", type=float, default=0.01, help="predict threshold with --all-boxes")
     args = ap.parse_args(argv)
@@ -42,7 +44,11 @@ def main(argv=None) -> None:
 
     frames = Path(args.frames_dir)
     with open(frames / f"frames_{args.split}.jsonl") as f:
-        ids = [json.loads(l)["frame_id"] for l in f if l.strip()][:args.limit]
+        ids = [json.loads(l)["frame_id"] for l in f if l.strip()]
+    if args.ids_from:
+        keep = ids_in(Path(args.ids_from))
+        ids = [i for i in ids if i in keep]
+    ids = ids[:args.limit]
     images = [frames / "images" / args.split / f"{i}.jpg" for i in ids]
     model = YOLO(args.weights)
     out = Path(args.out)
