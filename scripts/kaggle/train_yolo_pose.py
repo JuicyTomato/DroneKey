@@ -16,6 +16,9 @@ from pathlib import Path
 
 CODE = Path(__file__).resolve().parents[2]            # folder that holds src/ and scripts/
 sys.path.insert(0, str(CODE / "src"))                  # dronepose without pip install
+sys.path.insert(0, str(CODE / "scripts" / "kaggle"))   # kaggle_paths
+from dronepose.keypoints.recipes import COMPOSITE, RECIPES  # noqa: E402
+
 FRAMES_LOCAL = Path("/tmp/yolo_frames")                # local disk: the input mount is slow per file
 
 
@@ -26,7 +29,12 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--model", default="yolo26s-pose.pt", help="pretrained weights")
     ap.add_argument("--hours", type=float, default=None, help="time budget (Ultralytics time=, epochs=300, patience=1000)")
     ap.add_argument("--epochs", type=int, default=None, help="number of epochs; only without --hours (default 10)")
-    ap.add_argument("--recipe", choices=["w1", "final"], default="final")
+    ap.add_argument("--recipe", choices=sorted(RECIPES), default=None,
+                    help="default: final on a new run, the run's own recipe on a resume")
+    ap.add_argument("--masks-dir", default=None, help="masks for copy-paste; default: Kaggle dataset dronepose-masks")
+    ap.add_argument("--bg-dir", default=None, help="background images for copy-paste; default: Kaggle dataset dronepose-bgs")
+    ap.add_argument("--blur-scale", type=float, default=None,
+                    help="blur length factor; default 1.0 (crop), 0.4 (frame: the real crop is 101 px wide at 640)")
     ap.add_argument("--imgsz", type=int, default=None, help="default 256 (crop) / 640 (frame)")
     ap.add_argument("--batch", type=int, default=None, help="default 64 (crop) / 32 (frame)")
     ap.add_argument("--workers", type=int, default=4)
@@ -40,6 +48,8 @@ def parse_args(argv=None) -> argparse.Namespace:
         ap.error("--epochs and --hours are mutually exclusive")
     args.imgsz = args.imgsz or (256 if args.setting == "crop" else 640)
     args.batch = args.batch or (64 if args.setting == "crop" else 32)
+    if args.blur_scale is None:
+        args.blur_scale = 1.0 if args.setting == "crop" else 0.4
     return args
 
 
@@ -107,12 +117,37 @@ def finish_info(run_dir: Path, info: dict) -> None:
     (run_dir / "run_info.json").write_text(json.dumps(info, indent=2))
 
 
+def run_settings(args, info: dict | None) -> tuple[str, float]:
+    """(recipe, blur_scale) of this launch. A resume keeps those of the run: without run_info.json the recipe must be
+    given, otherwise the composition would silently stop half way."""
+    if not args.resume_from:
+        return args.recipe or "final", args.blur_scale
+    known = (info or {}).get("recipe") or (info or {}).get("args", {}).get("recipe")
+    if known is None and args.recipe is None:
+        sys.exit("resume without run_info.json: pass the run's --recipe (and --blur-scale, if it was not the default)")
+    if known is not None and args.recipe not in (None, known):
+        sys.exit(f"--recipe {args.recipe} differs from the run's {known}")
+    return known or args.recipe, (info or {}).get("args", {}).get("blur_scale", args.blur_scale)
+
+
+def build_composer(args, recipe: str):
+    """The recipe's Composer (None without composition); masks and backgrounds are only needed for the paste."""
+    from dronepose.keypoints.composite import composer_for
+    from kaggle_paths import resolve_aug_dirs
+
+    spec = COMPOSITE.get(recipe)
+    if spec is None or spec.p_paste == 0:
+        return composer_for(recipe, None, None, args.blur_scale)
+    return composer_for(recipe, *resolve_aug_dirs(args.masks_dir, args.bg_dir, args.setting), args.blur_scale)
+
+
 def main() -> None:
     args = parse_args()
     t0 = time.time()
-    print(f"[{0:7.1f}s] setting={args.setting} recipe={args.recipe} model={args.model} code={CODE}", flush=True)
+    print(f"[{0:7.1f}s] setting={args.setting} recipe={args.recipe or 'default'} model={args.model} code={CODE}", flush=True)
     from dronepose.common.registry import data_fingerprint, make_run_info
-    from dronepose.keypoints.recipes import RECIPES, albumentations_for
+    from dronepose.keypoints.recipes import albumentations_for
+    from dronepose.keypoints.yolo_composite import train_kwargs as yolo_train_kwargs
     from ultralytics import YOLO
 
     data, data_dir = prepare_data(args)
@@ -125,14 +160,20 @@ def main() -> None:
         ckpt_args = getattr(model, "ckpt", {}).get("train_args", {}) or {}
         run_dir = Path(ckpt_args.get("save_dir") or Path(args.resume_from).parent.parent)
         old = next((p for p in (Path(args.resume_from).parent.parent / "run_info.json", run_dir / "run_info.json") if p.exists()), None)
-        info = json.loads(old.read_text()) if old else make_run_info(
+        known = json.loads(old.read_text()) if old else None
+        args.recipe, args.blur_scale = run_settings(args, known)
+        info = known or make_run_info(
             {**vars(args), "name": ckpt_args.get("name", args.name)}, read_commit(), data_hash, versions, gpu)
         info.setdefault("resumed", []).append(time.strftime("%Y-%m-%d"))
-        train = lambda: model.train(resume=True)  # noqa: E731
+        composer = build_composer(args, args.recipe)
+        extra = yolo_train_kwargs(composer)
+        train = lambda: model.train(resume=True, **extra)  # noqa: E731
     else:
         run_dir = Path(args.project) / args.name
+        args.recipe, args.blur_scale = run_settings(args, None)
         info = make_run_info(vars(args), read_commit(), data_hash, versions, gpu)
-        kw = dict(RECIPES[args.recipe])
+        composer = build_composer(args, args.recipe)
+        kw = {**RECIPES[args.recipe], **yolo_train_kwargs(composer)}
         aug = albumentations_for(args.recipe)
         if aug is not None:
             kw["augmentations"] = aug
@@ -143,6 +184,8 @@ def main() -> None:
             project=args.project, name=args.name, exist_ok=True, seed=args.seed,
             **({"cache": "ram"} if args.setting == "crop" else {}), **budget, **kw)
 
+    if composer is not None:
+        info.update(n_masks=composer.n_masks, n_backgrounds=composer.n_backgrounds)
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "run_info.json").write_text(json.dumps(info, indent=2))
     print(f"[{time.time() - t0:7.1f}s] run_info.json -> {run_dir} (commit {info['commit']})", flush=True)
