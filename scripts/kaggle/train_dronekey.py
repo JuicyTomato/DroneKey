@@ -16,6 +16,7 @@ from pathlib import Path
 CODE = Path(__file__).resolve().parents[2]            # folder that holds src/ and scripts/
 sys.path.insert(0, str(CODE / "src"))                  # dronepose without pip install
 sys.path.insert(0, str(CODE / "scripts" / "kaggle"))   # kaggle_paths
+from dronepose.keypoints.recipes import COMPOSITE, RECIPES  # noqa: E402
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -24,7 +25,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--variant", required=True, help="variant of configs/dronekey.json (paper, code, G0..G6)")
     ap.add_argument("--epochs", type=int, default=None, help="default: train.epochs (paper/code) or ladder_epochs (G*)")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--recipe", choices=["w1", "final", "none"], default=None, help="default: the variant's recipe")
+    ap.add_argument("--recipe", choices=sorted(RECIPES) + ["none"], default=None, help="default: the variant's recipe")
+    ap.add_argument("--masks-dir", default=None, help="crop masks for copy-paste; default: Kaggle dataset dronepose-masks")
+    ap.add_argument("--bg-dir", default=None, help="background images for copy-paste; default: Kaggle dataset dronepose-bgs")
     ap.add_argument("--name", default=None, help="run name (required unless --resume-from; on resume it must match the checkpoint's)")
     ap.add_argument("--project", default="/kaggle/working/runs")
     ap.add_argument("--resume-from", default=None, help="last.pt of an interrupted run, also read-only (e.g. a Kaggle dataset; best.pt, run_info.json, history.json next to it are carried over). "
@@ -71,13 +74,24 @@ def build_run_cfg(args, name: str) -> dict:
 
 
 def require_albumentations(recipe: str) -> None:
-    """w1/final include Albumentations filters: refuse to train without them (the recipe would silently differ from YOLO26s's)."""
-    if recipe in ("w1", "final"):
+    """Every recipe but none includes Albumentations filters: refuse to train without them (it would silently differ from YOLO26s's)."""
+    if recipe != "none":
         try:
             import albumentations  # noqa: F401
         except ImportError:
             sys.exit(f"albumentations mancante: la ricetta {recipe} non sarebbe quella di YOLO26s; "
                      "installarlo (pip install albumentations) o usare --recipe none")
+
+
+def build_composer(args, recipe: str):
+    """The recipe's Composer (None without composition); masks and backgrounds are only needed for the paste."""
+    from dronepose.keypoints.composite import composer_for
+    from kaggle_paths import resolve_aug_dirs
+
+    spec = COMPOSITE.get(recipe)
+    if spec is None or spec.p_paste == 0:
+        return composer_for(recipe, None, None)
+    return composer_for(recipe, *resolve_aug_dirs(args.masks_dir, args.bg_dir, "crop"))
 
 
 def finish_info(run_dir: Path, info: dict) -> None:
@@ -146,7 +160,12 @@ def main() -> None:
 
     T.seed_everything(args.seed)  # head init reproducible; fit re-seeds fresh runs
     inp = run_cfg["input"]
-    train_ds = CropDataset(root, "train", run_cfg["recipe"], True, inp, seed=args.seed, limit=args.limit, cache_ram=args.cache_ram)
+    composer = build_composer(args, run_cfg["recipe"])
+    if composer is not None:
+        info.update(n_masks=composer.n_masks, n_backgrounds=composer.n_backgrounds)
+        old.write_text(json.dumps(info, indent=2))
+    train_ds = CropDataset(root, "train", run_cfg["recipe"], True, inp, seed=args.seed, limit=args.limit,
+                           cache_ram=args.cache_ram, composer=composer)
     val_ds = CropDataset(root, "val", run_cfg["recipe"], False, inp, limit=args.limit, cache_ram=args.cache_ram)
     print(f"[{time.time() - t0:7.1f}s] train {len(train_ds)} crops, val {len(val_ds)} crops", flush=True)
     model = build_model(run_cfg["model"], pretrained=not args.no_pretrained)

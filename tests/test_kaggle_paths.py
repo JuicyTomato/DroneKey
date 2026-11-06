@@ -39,3 +39,39 @@ def test_write_data_yaml_other_subfolder(tmp_path):
     out = kp.write_data_yaml(frames, tmp_path / "work", sub="yolo_frames", name="data_frames.yaml")
     assert out.name == "data_frames.yaml"
     assert yaml.safe_load(out.read_text())["path"] == str(frames / "yolo_frames")
+
+
+def test_copy_tree_marker_and_skip(tmp_path):
+    (tmp_path / "s" / "sub").mkdir(parents=True)
+    (tmp_path / "s" / "sub" / "a.png").write_bytes(b"x")
+    out = kp.copy_tree(tmp_path / "s", tmp_path / "d")
+    assert (out / ".done").exists() and (out / "sub" / "a.png").read_bytes() == b"x"
+    (tmp_path / "s" / "b.png").write_bytes(b"y")
+    kp.copy_tree(tmp_path / "s", tmp_path / "d")
+    assert not (tmp_path / "d" / "b.png").exists()
+
+
+def test_resolve_aug_dirs_explicit_paths_are_kept(tmp_path):
+    assert kp.resolve_aug_dirs("m", "b", "crop") == (Path("m"), Path("b"))
+
+
+def test_resolve_aug_dirs_from_kaggle(tmp_path):
+    root = tmp_path / "in"
+    (root / "dronepose-masks" / "crop").mkdir(parents=True)
+    (root / "dronepose-masks" / "crop" / "x.png").write_bytes(b"1")
+    (root / "dronepose-bgs").mkdir()
+    (root / "dronepose-bgs" / "b.jpg").write_bytes(b"2")
+    m, b = kp.resolve_aug_dirs(None, None, "crop", root=root, local=tmp_path / "local")
+    assert (m / "x.png").exists() and (b / "b.jpg").exists() and str(m).startswith(str(tmp_path / "local"))
+
+
+def test_crop_and_frame_masks_do_not_share_a_folder(tmp_path):
+    root = tmp_path / "in"
+    for sub, name in (("crop", "c.png"), ("frame", "f.png")):
+        (root / "dronepose-masks" / sub).mkdir(parents=True)
+        (root / "dronepose-masks" / sub / name).write_bytes(b"1")
+    (root / "dronepose-bgs").mkdir()
+    (root / "dronepose-bgs" / "b.jpg").write_bytes(b"2")
+    kp.resolve_aug_dirs(None, None, "crop", root=root, local=tmp_path / "local")
+    m, _ = kp.resolve_aug_dirs(None, None, "frame", root=root, local=tmp_path / "local")
+    assert (m / "f.png").exists() and not (m / "c.png").exists()

@@ -55,12 +55,13 @@ def preprocess_crop(img_bgr: np.ndarray, input_cfg: dict) -> torch.Tensor:
 class CropDataset(Dataset):
     def __init__(self, root, split: str, recipe: str, train: bool, input_cfg: dict, seed: int = 0,
                  limit: int | None = None, cache_ram: bool = False, allow_test: bool = False,
-                 io_threads: int = 32):
+                 io_threads: int = 32, composer=None):
         if split == "test" and not allow_test:
             raise ValueError("test split is locked: pass allow_test=True for the final evaluation only")
         self.root, self.split, self.recipe, self.train = Path(root), split, recipe, train
         self.seed, self.epoch = seed, 0
         self.input_cfg = input_cfg
+        self.composer = composer  # callable (img, frame_id, rng) -> img, train only, before the recipe
         self.flip_idx = list(input_cfg["flip_idx"])
         images = sorted((self.root / "images" / split).glob("*.jpg"), key=lambda p: p.stem)
         self.items = [(p.stem, p, self.root / "labels" / split / f"{p.stem}.txt") for p in images]
@@ -98,6 +99,8 @@ class CropDataset(Dataset):
         kp = self.kpts[i] * [w, h]
         if self.train:
             rng = np.random.default_rng((self.seed, self.epoch, i))
+            if self.composer is not None:
+                img = self.composer(img, fid, rng)
             img, kp = apply_recipe(img, kp, self.recipe, rng, self.flip_idx)
         kp = (kp / [w, h]).astype(np.float32).reshape(-1)  # normalized to the 256 crop, out-of-crop values kept
         return preprocess_crop(img, self.input_cfg), torch.from_numpy(kp), fid

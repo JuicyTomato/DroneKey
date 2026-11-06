@@ -76,6 +76,7 @@ def default_albumentations_w1():
 
 
 _PIXEL_CACHE: dict = {}  # only the real recipes are cached; ad-hoc (test) recipe names are rebuilt every time
+_CACHED = frozenset(RECIPES)
 
 
 def _pixel_pipeline(recipe: str):
@@ -87,7 +88,7 @@ def _pixel_pipeline(recipe: str):
         return None
     tfs = default_albumentations_w1() if recipe == "w1" else albumentations_for(recipe)
     pipe = A.Compose(tfs) if tfs else None
-    if recipe in ("w1", "final"):
+    if recipe in _CACHED:
         _PIXEL_CACHE[recipe] = pipe
     return pipe
 
