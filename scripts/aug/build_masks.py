@@ -1,8 +1,8 @@
 """SAM output -> accepted masks for the 256 crops and the 640x360 frames, with the quality gate of spec §5.
 
-A mask is accepted when all 4 hubs are inside and its area stays below median of the drone x 2.5 (the hubs alone would
-accept a mask that covers the whole crop). The difference between renders is a check, used where its own area is
-plausible. Only accepted masks are written: a frame without a mask is never pasted (dronepose.keypoints.composite).
+A mask is accepted when all 4 hubs are inside, the body at their mean is inside, and its area stays below median of the
+drone x 2.5 (the hubs alone would accept a mask that covers the whole crop, or only the motors). The difference between renders is a check, used where its own area is
+plausible. Only accepted masks stay in out/, also after a rerun: a frame without a mask is never pasted (dronepose.keypoints.composite).
 Usage: .venv/bin/python scripts/aug/build_masks.py --inputs $AUG/sam_inputs --sam $AUG/sam_out --out $AUG/masks
 Output: crop/, frame/, quality.jsonl, qc/{random,worst}.jpg, rejected.txt.
 """
@@ -20,7 +20,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))   # dronepose without pip install
 from dronepose.data.canonical import read_jsonl  # noqa: E402
 from dronepose.data.crops import CropBox, crop_image  # noqa: E402
-from dronepose.data.masks import (area_limits, diff_mask, geom_key, keypoints_in_mask, mask_iou, native_to_crop,  # noqa: E402
+from dronepose.data.masks import (area_limits, center_in_mask, diff_mask, geom_key, keypoints_in_mask, mask_iou, native_to_crop,  # noqa: E402
                                   native_to_frame, soften)
 
 TILE = 160
@@ -31,8 +31,9 @@ def measure(job: tuple[dict, Path]) -> dict | None:
     r, sam = job
     m = cv2.imread(str(sam / f"{r['geom']}.png"), cv2.IMREAD_GRAYSCALE)
     if m is None:
-        return {**r, "kpts_ok": False, "area": None}
-    return {**r, "kpts_ok": keypoints_in_mask(m, np.array(r["kpts"])), "area": float((m > 0).mean())}
+        return {**r, "kpts_ok": False, "body_ok": False, "area": None}
+    k = np.array(r["kpts"])
+    return {**r, "kpts_ok": keypoints_in_mask(m, k), "body_ok": center_in_mask(m, k), "area": float((m > 0).mean())}
 
 
 def check(job: tuple[dict, list[str], Path, float | None]) -> dict:
@@ -95,21 +96,23 @@ def main(argv=None) -> None:
     with open(out / "quality.jsonl", "w") as q, open(out / "rejected.txt", "w") as rej:
         for r in rows:
             r["diff_iou"] = iou[r["geom"]]
-            r["accepted"] = bool(r["kpts_ok"] and r["area"] is not None and r["area"] <= limits[r["drone"]])
-            q.write(json.dumps({k: r[k] for k in ("geom", "drone", "kpts_ok", "area", "diff_iou", "accepted")}) + "\n")
+            r["accepted"] = bool(r["kpts_ok"] and r["body_ok"] and r["area"] is not None and r["area"] <= limits[r["drone"]])
+            q.write(json.dumps({k: r[k] for k in ("geom", "drone", "kpts_ok", "body_ok", "area", "diff_iou", "accepted")}) + "\n")
             if not r["accepted"]:
                 rej.write(r["geom"] + "\n")
+                for sub in ("crop", "frame"):
+                    (out / sub / f"{r['geom']}.png").unlink(missing_ok=True)
                 continue
             accepted += 1
             m = soften(cv2.imread(str(sam / f"{r['geom']}.png"), cv2.IMREAD_GRAYSCALE))
             cv2.imwrite(str(out / "crop" / f"{r['geom']}.png"), native_to_crop(m))
             cv2.imwrite(str(out / "frame" / f"{r['geom']}.png"), native_to_frame(m, CropBox(*r["box"])))
 
-    print("drone  frames  hubs ok  area median  limit  accepted  diff IoU median")
+    print("drone  frames  hubs ok  body ok  area median  limit  accepted  diff IoU median")
     for d in sorted(areas):
         x = [r for r in rows if r["drone"] == d]
         ious = [r["diff_iou"] for r in x if r["diff_iou"] is not None]
-        print(f"{d:5s}  {len(x):6d}  {np.mean([r['kpts_ok'] for r in x]):7.3f}  {np.median(areas[d]):11.3f}  "
+        print(f"{d:5s}  {len(x):6d}  {np.mean([r['kpts_ok'] for r in x]):7.3f}  {np.mean([r['body_ok'] for r in x]):7.3f}  {np.median(areas[d]):11.3f}  "
               f"{limits[d]:5.3f}  {np.mean([r['accepted'] for r in x]):8.3f}  {np.median(ious) if ious else float('nan'):.3f}")
     ok = float(np.mean([r["kpts_ok"] for r in rows]))
     print(f"gate: hubs inside {ok:.4f} (need {GATE}) -> {'PASS' if ok >= GATE else 'FAIL'}; accepted {accepted}/{len(rows)}")

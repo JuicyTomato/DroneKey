@@ -90,3 +90,55 @@ def test_sam_prompts_stay_inside_crop():
     s = _load("scripts/kaggle/sam_masks.py", "sam_masks")
     box, pts, labels = s.prompts([[10, 50], [90, 50], [50, 10], [50, 90]], 100)
     assert box == [0, 0, 100, 100] and labels == [1, 1, 1, 1] and len(pts) == 4
+
+
+def test_sam_masks_counts_a_failed_write(tmp_path, monkeypatch):
+    """A PNG that cannot be written (external disk) is a failure, never a mask."""
+    import json
+    import sys
+    import types
+
+    import numpy as np
+
+    sam_masks = _load("scripts/kaggle/sam_masks.py", "sam_masks")
+    (tmp_path / "in" / "images").mkdir(parents=True)
+    (tmp_path / "in" / "index.jsonl").write_text(json.dumps({"geom": "g", "size": 100, "kpts": [[10, 10], [90, 90]]}) + "\n")
+
+    class FakeSAM:
+        def __init__(self, _):
+            pass
+
+        def predict(self, *a, **k):
+            data = types.SimpleNamespace(cpu=lambda: types.SimpleNamespace(numpy=lambda: np.ones((1, 4, 4))))
+            return [types.SimpleNamespace(masks=types.SimpleNamespace(data=data))]
+
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(SAM=FakeSAM))
+    monkeypatch.setattr(sam_masks.cv2, "imwrite", lambda *a, **k: False)
+    sam_masks.main(["--inputs", str(tmp_path / "in"), "--out", str(tmp_path / "out"), "--device", "cpu"])
+    assert (tmp_path / "out" / "failed.txt").read_text() == "g\n"
+
+
+def test_sam_prompts_center_point():
+    """--center adds the mean of the hubs as a fifth positive point, for bodies SAM leaves out."""
+    s = _load("scripts/kaggle/sam_masks.py", "sam_masks")
+    _, pts, labels = s.prompts([[10, 10], [30, 10], [30, 30], [10, 30]], 100, center=True)
+    assert pts[-1] == [20.0, 20.0] and len(pts) == 5 and labels == [1] * 5
+
+
+def test_sam_only_filter(tmp_path):
+    s = _load("scripts/kaggle/sam_masks.py", "sam_masks")
+    only = tmp_path / "only.txt"
+    only.write_text("b\n")
+    assert s.select([{"geom": "a"}, {"geom": "b"}], str(only), None) == [{"geom": "b"}]
+    assert s.select([{"geom": "a"}, {"geom": "b"}], None, 1) == [{"geom": "a"}]
+
+
+def test_center_in_mask():
+    """The gate needs the body: hubs alone pass a mask with only the motors."""
+    from dronepose.data.masks import center_in_mask
+
+    kpts = np.array([[20, 20], [80, 20], [80, 80], [20, 80]], float)
+    full = np.full((100, 100), 255, np.uint8)
+    motors = full.copy()
+    motors[30:70, 30:70] = 0
+    assert center_in_mask(full, kpts) and not center_in_mask(motors, kpts)

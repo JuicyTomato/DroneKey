@@ -24,6 +24,15 @@ def keypoints_in_mask(mask: np.ndarray, kpts: np.ndarray, radius: int = 3) -> bo
     return True
 
 
+def center_in_mask(mask: np.ndarray, kpts: np.ndarray, frac: float = 0.5, radius: float = 0.04) -> bool:
+    """At least `frac` of a disk on the hub mean (radius * hub extent) is mask: hubs alone pass a mask without the body."""
+    k = np.asarray(kpts, float).reshape(-1, 2)
+    disk = np.zeros(mask.shape[:2], np.uint8)
+    r = max(2, round(radius * float(np.ptp(k, axis=0).max())))
+    cv2.circle(disk, tuple(int(v) for v in k.mean(0).round()), r, 1, -1)
+    return bool(disk.any() and (mask[disk > 0] > 0).mean() >= frac)
+
+
 def diff_mask(renders: list[np.ndarray], kpts: np.ndarray, thr: int = 40) -> np.ndarray:
     """(H, W) uint8 0/1 mask of what stays the same across renders on different backgrounds, kept near the keypoints.
     Quality check only: when the backgrounds look alike it leaks over the whole crop."""
