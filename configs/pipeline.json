@@ -1,0 +1,10 @@
+{
+ "seed": 0,
+ "detector": "experiments/results/runs/c_yolo26s/weights/best.pt",
+ "keypoints": "experiments/dronekey/runs/resultsGPU/dk_paper_s0/last_w.pt",
+ "classifier": "experiments/class/cls_runs/runs0/cls_s_s0/weights/last.pt",
+ "class_params": "experiments/class/eval/final_params.json",
+ "forecast_runs": "experiments/forecast/e4/runs",
+ "forecast_params": "data/processed/forecast_archive/e4",
+ "device": "mps"
+}
