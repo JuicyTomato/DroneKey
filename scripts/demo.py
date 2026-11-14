@@ -24,9 +24,9 @@ sys.path.insert(0, str(ROOT / "src"))
 import numpy as np  # noqa: E402
 
 from dronepose.eval.units import METERS_PER_UNIT  # noqa: E402
-from dronepose.pipeline.decide import StreamingDecider, _g_pose, decide_sequence  # noqa: E402
+from dronepose.pipeline.decide import StreamingDecider, decide_sequence  # noqa: E402
 from dronepose.pipeline.draw import OUT_H, OUT_W, draw_frame  # noqa: E402
-from dronepose.pipeline.forecast_now import Forecaster  # noqa: E402
+from dronepose.pipeline.forecast_now import Forecaster, live_window  # noqa: E402
 from dronepose.pipeline.klass import load_klg_params  # noqa: E402
 from dronepose.pipeline.perception import PerceptionModels  # noqa: E402
 from dronepose.pipeline.sources import SixDroneSynSource  # noqa: E402
@@ -46,19 +46,13 @@ def forecast_cam(fc: Forecaster, window: list[dict], G: np.ndarray) -> tuple[np.
     """window: the last 15 frames {R, t, cls} (oldest first) -> (future in gravity metres, future in camera units)."""
     if len(window) < N_OBS:
         return None, None
-    cls = window[-1]["cls"]
-    s = METERS_PER_UNIT.get(cls) if cls else None
-    if s is None:
+    P, Rg, V, ref = live_window(window)
+    if ref is None:
         return None, None
-    P, Rg, V = np.zeros((N_OBS, 3)), np.tile(np.eye(3), (N_OBS, 1, 1)), np.zeros(N_OBS, bool)
-    for k, x in enumerate(window):
-        g = _g_pose(x["R"], x["t"], x["cls"], x["cls"]) if x["cls"] == cls else None
-        if g is not None:
-            Rg[k], P[k], V[k] = g[0], g[1], True
-    fut = fc.predict(P, Rg, V, cls)
+    fut = fc.predict(P, Rg, V, ref)
     if fut is None:
         return None, None
-    return fut, (G.T @ fut.T).T / s
+    return fut, (G.T @ fut.T).T / METERS_PER_UNIT[ref]
 
 
 def main(argv=None) -> None:

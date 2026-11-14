@@ -798,7 +798,7 @@ Spec: `docs/superpowers/specs/2026-11-14-fase4-pipeline-design.md`; piano: `docs
 **Offline vs streaming (val, seme 0; `experiments/pipeline/streaming_val_s0/table.md`).** W scelto con la regola (copertura ≥ 95%, rotazione mediana, pareggio → W più piccolo): **W = 60** (pareggio con 120). Osservazioni della previsione: (e) pose emesse (ridecise − emesse −0.0004 m [−0.0014, +0.0001], pareggio).
 - Posa: offline copertura 97.2%, rotazione mediana 1.341°, flip senza 08 0.17%; streaming W60 1.349° (+0.008 [−0.004, +0.072]), flip **3.27%** (+3.10 punti [−0.08, +9.03]), p90 6.3° contro 4.3°. W1 (scelta per frame): flip 7.45%, significativo.
 - Previsione (droni 01–06): R-CV-6D ADE 1 s **0.132 → 0.137 m** (+0.0053 [+0.0001, +0.0106], +4%); FDE 0.240 → 0.251; CV-2 0.260 → 0.283.
-- Contesto: offline con keypoint YOLO26s s0 dagli stessi stadi 1.490°, ADE 0.148 m (tesi E4b K+L+g, 3×3 semi: 0.153): DroneKey migliora la previsione di ~0.016 m.
+- Contesto: offline con keypoint YOLO26s s0 dagli stessi stadi 1.490°, ADE 0.148 m (tesi E4b K+L+g, 3×3 semi: 0.153). Riga di solo contesto, senza intervallo: non è un confronto formale DroneKey vs YOLO26s (la Δ di rotazione +0.149 [−0.033, +0.344] include lo zero).
 
 **Tempi sul Mac (M1, MPS; `experiments/pipeline/timing_mac.md`, 3 sequenze, streaming):** p50 172.7 ms/frame (5.8 fps): riduzione 3.4, detector 33.3, crop 0.8, DroneKey 26.7, K 7.2, geometria 1.4, decisione 2.2, **previsione 97.7** (quasi tutto `base_predictions`: integrazione acro della base fisica, non la GRU). Video: `experiments/pipeline/videos/` (03_04_14_180, 09_06_10_000, 14_02_07_000 × offline/streaming).
 

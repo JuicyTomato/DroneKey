@@ -19,7 +19,6 @@ from dronepose.pipeline.sources import Frame, SceneInfo
 
 MS_KEYS = ("reduce", "detect", "crop", "keypoints", "classify", "geometry")
 TOP_CONF = 0.25          # Ultralytics predict default, threshold of C's exported top box
-FULL_WIDTH = 1920
 
 
 @dataclass
@@ -97,7 +96,7 @@ class PerceptionModels:
         if len(conf) == 0 or conf.max() < TOP_CONF:
             return out
         j = int(np.argmax(conf))
-        scale = FULL_WIDTH / small.shape[1]
+        scale = frame.image.shape[1] / small.shape[1]
         out.box = (np.asarray(xyxy[j], float) * scale).tolist()
         out.box_conf = float(conf[j])
 

@@ -95,3 +95,11 @@ def test_row_roundtrip():
 def test_ms_keys():
     p = PerceptionModels(_det(), _kp, _cls).perceive(_frame(), _info())
     assert set(p.ms) == set(MS_KEYS) and all(v >= 0 for v in p.ms.values())
+
+
+def test_box_scale_follows_frame_width():
+    img = np.zeros((720, 1280, 3), np.uint8)
+    fr = Frame("x_0001", 1, img, K, None)
+    det = lambda im: (np.array([[100, 50, 140, 80]], float), np.array([0.9]), np.array([1.0]), np.zeros((1, 4, 2)), None)
+    p = PerceptionModels(det, _kp, _cls).perceive(fr, _info())
+    assert p.box == pytest.approx([200, 100, 280, 160])

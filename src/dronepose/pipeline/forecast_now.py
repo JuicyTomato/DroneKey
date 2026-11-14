@@ -19,6 +19,22 @@ from dronepose.forecast.windows import Windows
 from dronepose.eval.units import METERS_PER_UNIT
 
 NET = "R-CV-6D"
+
+
+def live_window(hist: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, str | None]:
+    """Observation window from the last poses {R, t, cls} (camera frame, oldest first), as E4b builds it: every frame
+    in metres with the scale of ITS predicted class; frames without a pose, without a class or predicted as a drone
+    without a metric size are lost. Returns positions (gravity frame), rotations, valid mask and the reference class
+    (class of the last valid frame; None = no metric frame, no forecast)."""
+    from dronepose.eval.units import GRAVITY_FROM_CAMERA as G
+    n = len(hist)
+    P, R, V, ref = np.zeros((n, 3)), np.tile(np.eye(3), (n, 1, 1)), np.zeros(n, bool), None
+    for k, x in enumerate(hist):
+        s = METERS_PER_UNIT.get(x["cls"]) if x["cls"] else None
+        if x["R"] is None or x["t"] is None or s is None:
+            continue
+        R[k], P[k], V[k], ref = G @ np.asarray(x["R"], float), G @ np.asarray(x["t"], float) * s, True, x["cls"]
+    return P, R, V, ref
 _E4 = Path(__file__).resolve().parents[3] / "scripts" / "forecast" / "e4"
 
 
