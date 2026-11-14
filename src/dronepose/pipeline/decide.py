@@ -47,6 +47,24 @@ def _result(rec: dict, perc: Perception, ch: Choice, drone_model: str | None) ->
     return out
 
 
+class StreamingDecider:
+    """Decision of one frame at a time, past only: class, IPPE + LM with the class model, choice on the last W frames."""
+
+    def __init__(self, info: SceneInfo, params: dict, W: int):
+        self.info, self.params = info, params
+        self.fuser = CausalClassFuser()
+        self.chooser = WindowChooser(W)
+
+    def step(self, p: Perception, rec: dict | None, K) -> tuple[dict, list[dict]]:
+        """(result of this frame, poses re-decided now for the last min(15, W, n) frames, oldest first)."""
+        cls = self.info.fixed_class or self.fuser.update(klg_frame_scores(p.probs, p.reproj, self.params))
+        c = candidates(p.kpts, K, self.info.models[cls] if cls else None)
+        ch, red = self.chooser.step(c, p.frame_idx)
+        idx = list(self.chooser.idx)[-len(red):]
+        return (_result(rec, p, ch, cls),
+                [{"frame_idx": i, "R": _pose(x)[0], "t": _pose(x)[1]} for i, x in zip(idx, red)])
+
+
 def decide_sequence(perc: list[Perception], records: list[dict], info: SceneInfo, params: dict, mode: str,
                     W: int | None = None) -> tuple[list[dict], dict[int, list[dict]]]:
     """One result per frame (replay format + drone_model) and, in streaming, the poses re-decided at every frame
@@ -57,24 +75,22 @@ def decide_sequence(perc: list[Perception], records: list[dict], info: SceneInfo
         raise ValueError("streaming needs W >= 1")
     if [p.frame_id for p in perc] != [r["frame_id"] for r in records]:
         raise ValueError("perceptions and records are not the same frames in the same order")
+    if mode == "streaming":
+        dec = StreamingDecider(info, params, W)
+        out, redecided = [], {}
+        for p, r in zip(perc, records):
+            res, red = dec.step(p, r, r["K"])
+            out.append(res)
+            redecided[p.frame_idx] = red
+        return out, redecided
     fuser = CausalClassFuser()
     classes, cands = [], []
-    chooser = WindowChooser(W) if mode == "streaming" else None
-    emitted: list[Choice] = []
-    redecided: dict[int, list[dict]] = {}
     for p, r in zip(perc, records):
         cls = info.fixed_class or fuser.update(klg_frame_scores(p.probs, p.reproj, params))
-        c = candidates(p.kpts, r["K"], info.models[cls] if cls else None)
         classes.append(cls)
-        cands.append(c)
-        if chooser is not None:
-            ch, red = chooser.step(c, p.frame_idx)
-            emitted.append(ch)
-            idx = list(chooser.idx)[-len(red):]
-            redecided[p.frame_idx] = [{"frame_idx": i, "R": _pose(x)[0], "t": _pose(x)[1]} for i, x in zip(idx, red)]
-    if chooser is None:
-        emitted = choose_offline(cands, [p.frame_idx for p in perc])
-    return [_result(r, p, ch, cls) for p, r, ch, cls in zip(perc, records, emitted, classes)], redecided
+        cands.append(candidates(p.kpts, r["K"], info.models[cls] if cls else None))
+    emitted = choose_offline(cands, [p.frame_idx for p in perc])
+    return [_result(r, p, ch, cls) for p, r, ch, cls in zip(perc, records, emitted, classes)], {}
 
 
 def write_pose_file(results_by_seq: dict[str, list[dict]], records_by_id: dict[str, dict], split: str, seed: int,
