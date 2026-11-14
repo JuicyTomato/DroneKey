@@ -802,9 +802,20 @@ Spec: `docs/superpowers/specs/2026-11-14-fase4-pipeline-design.md`; piano: `docs
 
 **Tempi sul Mac (M1, MPS; `experiments/pipeline/timing_mac.md`, 3 sequenze, streaming):** p50 172.7 ms/frame (5.8 fps): riduzione 3.4, detector 33.3, crop 0.8, DroneKey 26.7, K 7.2, geometria 1.4, decisione 2.2, **previsione 97.7** (quasi tutto `base_predictions`: integrazione acro della base fisica, non la GRU). Video: `experiments/pipeline/videos/` (03_04_14_180, 09_06_10_000, 14_02_07_000 × offline/streaming).
 
-**Limiti:** un seme; W e (e)/(r) scelti sulla stessa val su cui si misura la perdita; R-CV-6D tarata su rumore offline con keypoint YOLO26s; flip dello streaming 20× l'offline (la regola guarda la mediana, non i flip).
+**Semi 1 e 2 (2026-11-14, `experiments/pipeline/streaming_val_seeds.md`; config `configs/pipeline_s{1,2}.json`: DroneKey s1 `best.pt` / s2 `last_w.pt`, K `cls_s_s{1,2}/last.pt`, R-CV-6D fold s1/s2; W = 60 e (e) fissati dal seme 0).** Coerenza dal vivo come per il seme 0 (keypoint mediana 0.005 px; probabilità di K max 0.039 / 0.045, classe identica in 12 600/12 600 frame). Con la regola propria i semi 1 e 2 sceglierebbero W = 30 (60 è in pareggio col migliore in tutti e tre i semi).
 
-**Prossimi passi possibili (decide l'utente):** semi 1 e 2; tempi su GPU (T4); sorgente MAV6D quando chiude la sessione sim2real; base fisica più veloce o calcolata solo se la rete la usa; archivio degli errori causale se i flip dello streaming contano.
+| seme | rot off → stream | Δ rot [IC] | flip senza 08 off → stream | ADE 1 s off → stream | Δ ADE [IC] |
+|---|---|---|---|---|---|
+| 0 | 1.341 → 1.349° | +0.008 [−0.004, +0.072] | 0.17 → 3.27% | 0.1319 → 0.1372 | +0.0053 [+0.0001, +0.0106] |
+| 1 | 1.368 → 1.412° | +0.044 [−0.001, +0.139] | 0.00 → 2.72% | 0.1235 → 0.1231 | −0.0004 [−0.0013, +0.0000] |
+| 2 | 1.351 → 1.363° | +0.012 [−0.001, +0.053] | 10.27 → 10.37% | 0.1345 → 0.1402 | +0.0057 [+0.0016, +0.0105] |
+| media ± sd | 1.354 → 1.375° | +0.021 ± 0.020 | 3.48 → 5.45% | 0.1300 → 0.1335 | +0.0035 ± 0.0034 |
+
+Lettura: la rotazione mediana non peggiora in modo significativo in nessun seme; i flip salgono di ~3 punti nei semi 0 e 1 (IC che toccano lo zero); il seme 2 ha già 10% di flip offline (la traiettoria 14_05 di DroneKey s2, nota dal §6terdecies) e lo streaming non cambia; l'ADE a 1 s peggiora di ~0.005 m (+4%) nei semi 0 e 2, nulla nel seme 1. Contesto YOLO26s offline per seme: ADE 0.148 / 0.137 / 0.176 m.
+
+**Limiti:** inizialmente un seme (ora 3, W fissato dal seme 0); W e (e)/(r) scelti sulla stessa val su cui si misura la perdita; R-CV-6D tarata su rumore offline con keypoint YOLO26s; flip dello streaming 20× l'offline (la regola guarda la mediana, non i flip).
+
+**Prossimi passi possibili (decide l'utente):** ~~semi 1 e 2~~ (fatto); tempi su GPU (T4); sorgente MAV6D quando chiude la sessione sim2real; base fisica più veloce o calcolata solo se la rete la usa; archivio degli errori causale se i flip dello streaming contano.
 
 ## 7bis. Promemoria per l'inizio della fase 3 (ricordare all'utente!)
 
