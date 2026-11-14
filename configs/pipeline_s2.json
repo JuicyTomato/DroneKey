@@ -1,0 +1,13 @@
+{
+ "seed": 2,
+ "detector": "experiments/results/runs/c_yolo26s/weights/best.pt",
+ "keypoints": "experiments/dronekey/runs/resultsGPU/dk_paper_s2/last_w.pt",
+ "classifier": "experiments/class/cls_runs/runs2/cls_s_s2/weights/last.pt",
+ "class_params": "experiments/class/eval/final_params.json",
+ "forecast_runs": "experiments/forecast/e4/runs",
+ "forecast_params": "data/processed/forecast_archive/e4",
+ "device": "mps",
+ "ref_keypoints": "experiments/dronekey/keypoints/keypoints_val_b_dk_paper_s2_last.jsonl",
+ "ref_probs": "experiments/class/k/probs_val_s2.jsonl",
+ "yolo_keypoints": "experiments/results/keypoints/keypoints_val_b_cbest_crop_s_w1_s2.jsonl"
+}

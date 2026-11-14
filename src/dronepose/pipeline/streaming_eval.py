@@ -57,3 +57,29 @@ def window_errors(w_all, cfg, params_for, nets_for, device) -> tuple[dict, np.nd
         keys += [(int(a), str(c), int(g)) for a, c, g in zip(ws.meta["pose_seed"], ws.meta["copy"], ws.meta["gt_index"])]
     err = {k: np.concatenate([e[k] for e in errs]) for k in errs[0]}
     return err, np.concatenate(idx), keys
+
+
+SEED_FIELDS = ("rot_off", "rot_stream", "rot_delta", "flip_off", "flip_stream", "flip_delta", "ade_off", "ade_stream",
+               "ade_delta")
+
+
+def seed_summary(results_by_seed: dict[int, dict]) -> dict:
+    """Per-seed numbers of `eval_streaming.py` results, their mean and sample sd across seeds, and how many seeds have
+    a difference whose 95% interval excludes 0."""
+    per, ci = {}, {}
+    for s, r in sorted(results_by_seed.items()):
+        st = r["streaming_row"].removesuffix("_r")
+        S, f = r["summary"], r["forecast"]
+        d = r["forecast_streaming_minus_offline"][NET]
+        per[s] = {"rot_off": S["offline"]["median_rot_err_deg"], "rot_stream": S[st]["median_rot_err_deg"],
+                  "rot_delta": r["rot_vs_offline"][st][0], "flip_off": S["offline"]["flip_rate_no08"],
+                  "flip_stream": S[st]["flip_rate_no08"], "flip_delta": r["flip_no08_vs_offline"][st][0],
+                  "ade_off": f["offline"][NET]["ade_1s"], "ade_stream": f[r["streaming_row"]][NET]["ade_1s"],
+                  "ade_delta": d["mean"]}
+        ci[s] = {"rot_delta": r["rot_vs_offline"][st][1:], "flip_delta": r["flip_no08_vs_offline"][st][1:],
+                 "ade_delta": d["ci"]}
+    arr = {k: np.array([p[k] for p in per.values()], float) for k in SEED_FIELDS}
+    return {"per_seed": per, "ci": ci, "mean": {k: float(v.mean()) for k, v in arr.items()},
+            "sd": {k: float(v.std(ddof=1)) if len(v) > 1 else 0.0 for k, v in arr.items()},
+            "n_sig": {k: int(sum(not (lo <= 0 <= hi) for lo, hi in (c[k] for c in ci.values())))
+                      for k in ("rot_delta", "flip_delta", "ade_delta")}}

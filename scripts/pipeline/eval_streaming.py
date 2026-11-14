@@ -1,8 +1,10 @@
 """Offline vs streaming on the 6DroneSyn val, seed 0 (spec 2026-11-14 §7), from the live perception cache.
 
 Usage (venv ~/.venvs/dronepose-yolo, from the repo root):
-  python scripts/pipeline/eval_streaming.py [--perception experiments/pipeline/perception_val_s0.jsonl]
-      [--out experiments/pipeline/streaming_val_s0] [--bootstrap-b 10000] [--device auto]
+  python scripts/pipeline/eval_streaming.py [--config configs/pipeline_sN.json] [--perception PERC.jsonl]
+      [--out OUT_DIR] [--W 60 --obs e] [--bootstrap-b 10000] [--device auto]
+Defaults follow the config's seed: experiments/pipeline/perception_val_sN.jsonl, experiments/pipeline/streaming_val_sN.
+--W / --obs freeze the choices (seeds 1, 2 reuse those of seed 0) instead of applying the selection rules.
 Rows: offline (DroneKey); streaming W = 1, 15, 30, 60, 120 (emitted poses); chosen W with re-decided poses;
 context: offline with the YOLO26s seed-0 keypoints through the same stages. Never touches the test split.
 """
@@ -25,6 +27,7 @@ from dronepose.forecast.e4 import load_pose_windows  # noqa: E402
 from dronepose.forecast.e4_eval import REFERENCE, align_window_rows, degradation  # noqa: E402
 from dronepose.forecast.metrics import ade_at  # noqa: E402
 from dronepose.forecast.nets.device import pick_device  # noqa: E402
+from dronepose.forecast.windows import make_windows  # noqa: E402
 from dronepose.keypoints.class_scores import reproj_per_class  # noqa: E402
 from dronepose.pipeline.decide import decide_sequence, redecided_windows, write_pose_file  # noqa: E402
 from dronepose.pipeline.klass import load_klg_params  # noqa: E402
@@ -36,7 +39,6 @@ from dronepose.pose.replay import load_keypoints  # noqa: E402
 from e4_train import e4_run_name  # noqa: E402
 
 WS = (1, 15, 30, 60, 120)
-YOLO_KPTS = Path("experiments/results/keypoints/keypoints_val_b_cbest_yolo26s.jsonl")
 E4B_THESIS_KLG = 0.153
 
 
@@ -60,19 +62,23 @@ def flips(results):
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--perception", default="experiments/pipeline/perception_val_s0.jsonl")
+    ap.add_argument("--perception", default=None)
     ap.add_argument("--canonical", default="data/processed/canonical_val.jsonl")
-    ap.add_argument("--out", default="experiments/pipeline/streaming_val_s0")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--W", type=int, default=None, help="frozen window (skips the selection)")
+    ap.add_argument("--obs", choices=["e", "r"], default=None, help="frozen observation mode")
     ap.add_argument("--config", default="configs/pipeline.json")
     ap.add_argument("--bootstrap-b", type=int, default=10000)
     ap.add_argument("--device", default="auto")
     args = ap.parse_args(argv)
     t0 = time.time()
     cfg_p = json.loads(Path(args.config).read_text())
-    out = Path(args.out)
+    seed = int(cfg_p["seed"])
+    perc_path = args.perception or f"experiments/pipeline/perception_val_s{seed}.jsonl"
+    out = Path(args.out or f"experiments/pipeline/streaming_val_s{seed}")
     (out / "poses").mkdir(parents=True, exist_ok=True)
     src = SixDroneSynSource(Path(args.canonical))
-    with open(args.perception) as f:
+    with open(perc_path) as f:
         percs = {p.frame_id: p for p in (Perception.from_row(json.loads(l)) for l in f if l.strip())}
     by_id = {r["frame_id"]: r for s in src.sequences() for r in src.records(s)}
     if missing := [i for i in by_id if i not in percs]:
@@ -85,7 +91,7 @@ def main(argv=None) -> None:
     for W in WS:
         variants[f"W{W}"] = run_variant(src, percs, params, "streaming", W)
         print(f"W={W} done {time.time() - t0:.0f}s", flush=True)
-    yolo_kp = load_keypoints(YOLO_KPTS)
+    yolo_kp = load_keypoints(Path(cfg_p["yolo_keypoints"]))
     models = src.info(src.sequences()[0]).models
     percs_y = {}
     for fid, p in percs.items():
@@ -101,6 +107,8 @@ def main(argv=None) -> None:
                                                    ref="offline", n_boot=b, stat="mean")
     sel = select_window({W: res["summary"][f"W{W}"] for W in WS if W > 1},
                         {W: rot[f"W{W}"] for W in WS if W > 1}, n_boot=b)
+    if args.W is not None:
+        sel = {**sel, "chosen": args.W, "frozen": True}
     res["window_selection"] = sel
     Wc = sel["chosen"]
     print(f"poses done, W chosen {Wc} (best {sel['best']}, tied {sel['tied']}) {time.time() - t0:.0f}s", flush=True)
@@ -115,16 +123,14 @@ def main(argv=None) -> None:
     nets_for = lambda scene: {NET: [runs / e4_run_name(NET, f"fold{scene}", int(cfg_p["seed"]))]}
     errs = {}
     for name in ("offline", f"W{Wc}", "offline_yolo"):
-        path = out / "poses" / f"poses_val_s0_{name}.jsonl"
-        write_pose_file(variants[name][0], by_id, "val", 0, f"pipeline_{name}", path)
+        path = out / "poses" / f"poses_val_s{seed}_{name}.jsonl"
+        write_pose_file(variants[name][0], by_id, "val", seed, f"pipeline_{name}", path)
         w, _ = load_pose_windows(path, trajs, fcfg)
         errs[name] = window_errors(w, fcfg, params_for, nets_for, device)
-    w_r = redecided_windows(variants[f"W{Wc}"][1], variants[f"W{Wc}"][0], by_id, trajs, fcfg)
+    w_r = redecided_windows(variants[f"W{Wc}"][1], variants[f"W{Wc}"][0], by_id, trajs, fcfg, seed)
     errs[f"W{Wc}_r"] = window_errors(w_r, fcfg, params_for, nets_for, device)
     print(f"forecast errors done {time.time() - t0:.0f}s", flush=True)
 
-    gt_all = None
-    from dronepose.forecast.windows import make_windows
     gt_all = make_windows(trajs, fcfg.obs_len, fcfg.pred_len, fcfg.fps)
     H = fcfg.pred_len
 
@@ -136,6 +142,9 @@ def main(argv=None) -> None:
 
     ee, er, wer = paired(f"W{Wc}", f"W{Wc}_r")
     res["obs_mode_selection"] = select_obs_mode(ee, er, wer, b)
+    if args.obs is not None:
+        res["obs_mode_selection"] = {**res["obs_mode_selection"], "chosen": args.obs, "frozen": True}
+    res["seed"] = seed
     stream = f"W{Wc}" if res["obs_mode_selection"]["chosen"] == "e" else f"W{Wc}_r"
     res["forecast"] = {}
     for name in ("offline", f"W{Wc}", f"W{Wc}_r", "offline_yolo"):
@@ -148,14 +157,14 @@ def main(argv=None) -> None:
     res["e4b_thesis_klg_ade_1s"] = E4B_THESIS_KLG
     (out / "results.json").write_text(json.dumps(res, indent=1, default=lambda x: x.tolist()
                                                  if isinstance(x, np.ndarray) else float(x)))
-    write_table(out / "table.md", res, Wc, stream)
+    write_table(out / "table.md", res, Wc, stream, seed)
     print((out / "table.md").read_text())
     print(f"total {time.time() - t0:.0f}s")
 
 
-def write_table(path: Path, res: dict, Wc: int, stream: str) -> None:
+def write_table(path: Path, res: dict, Wc: int, stream: str, seed: int) -> None:
     S, rb, fb = res["summary"], res["rot_vs_offline"], res["flip_no08_vs_offline"]
-    L = ["# Offline vs streaming — val 6DroneSyn, seme 0", "",
+    L = [f"# Offline vs streaming — val 6DroneSyn, seme {seed}", "",
          "Posa (classe K+L+g, keypoint DroneKey, IPPE+LM). Differenze contro offline: bootstrap appaiato per traiettoria.", "",
          "| riga | copertura | rot mediana (°) | Δ vs offline [IC 95%] | p90 (°) | flip senza 08 | Δ flip [IC] | t mediana |",
          "|---|---|---|---|---|---|---|---|"]
@@ -165,8 +174,8 @@ def write_table(path: Path, res: dict, Wc: int, stream: str) -> None:
                  f"| {s['p90_rot_err_deg']:.2f} | {100 * s['flip_rate_no08']:.2f}% | {100 * f[0]:+.2f} [{100 * f[1]:+.2f}, {100 * f[2]:+.2f}] "
                  f"| {s['median_t_err']:.4f} |")
     sel, om = res["window_selection"], res["obs_mode_selection"]
-    L += ["", f"- **W scelto:** {Wc} (migliore {sel['best']}, in pareggio {sel['tied']}, ammessi {sel['eligible']}).",
-          f"- **Osservazioni:** ({om['chosen']}); ridecise − emesse ADE 1 s {om['r_minus_e']['mean']:+.4f} m "
+    L += ["", f"- **W {'fissato dal seme 0' if sel.get('frozen') else 'scelto'}:** {Wc} (migliore {sel['best']}, in pareggio {sel['tied']}, ammessi {sel['eligible']}).",
+          f"- **Osservazioni:** ({om['chosen']}{', fissato dal seme 0' if om.get('frozen') else ''}); ridecise − emesse ADE 1 s {om['r_minus_e']['mean']:+.4f} m "
           f"[{om['r_minus_e']['ci'][0]:+.4f}, {om['r_minus_e']['ci'][1]:+.4f}].", "",
           "Previsione (droni 01–06, metri, media sulle finestre):", "",
           f"| riga | {NET} ADE 1 s | {NET} FDE 1 s | {REFERENCE} ADE 1 s | finestre |", "|---|---|---|---|---|"]

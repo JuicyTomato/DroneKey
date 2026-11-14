@@ -6,5 +6,8 @@
  "class_params": "experiments/class/eval/final_params.json",
  "forecast_runs": "experiments/forecast/e4/runs",
  "forecast_params": "data/processed/forecast_archive/e4",
- "device": "mps"
+ "device": "mps",
+ "ref_keypoints": "experiments/dronekey/keypoints/keypoints_val_b_dk_paper_s0_last.jsonl",
+ "ref_probs": "experiments/class/k/probs_val_s0.jsonl",
+ "yolo_keypoints": "experiments/results/keypoints/keypoints_val_b_cbest_yolo26s.jsonl"
 }

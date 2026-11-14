@@ -1,7 +1,7 @@
 """Compare a live perception cache with the exported files of the same weights (spec 2026-11-14 §6).
 
-Usage: python scripts/pipeline/check_consistency.py --live experiments/pipeline/perception_val_s0.jsonl
-           [--out experiments/pipeline/consistency_val_s0.json]
+Usage: python scripts/pipeline/check_consistency.py --live experiments/pipeline/perception_val_sN.jsonl
+           [--config configs/pipeline_sN.json] [--out experiments/pipeline/consistency_val_sN.json]
 """
 import argparse
 import json
@@ -25,13 +25,18 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--live", required=True)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--config", default=None, help="takes ref_keypoints / ref_probs of this seed (default: seed 0 files)")
     args = ap.parse_args(argv)
+    ref = dict(REF)
+    if args.config:
+        cfg = json.loads(Path(args.config).read_text())
+        ref.update(kpts=cfg["ref_keypoints"], probs=cfg["ref_probs"])
     with open(args.live) as f:
         live = {p.frame_id: p for p in (Perception.from_row(json.loads(l)) for l in f if l.strip())}
     res = {"n_live": len(live), "thresholds": THRESHOLDS,
-           "boxes": compare_boxes(live, load_detections(Path(REF["boxes"]))),
-           "keypoints": compare_kpts(live, load_keypoints(Path(REF["kpts"]))),
-           "probs": compare_probs(live, load_probs(Path(REF["probs"])))}
+           "boxes": compare_boxes(live, load_detections(Path(ref["boxes"]))),
+           "keypoints": compare_kpts(live, load_keypoints(Path(ref["kpts"]))),
+           "probs": compare_probs(live, load_probs(Path(ref["probs"])))}
     res["verdicts"] = verdicts(res["boxes"], res["keypoints"], res["probs"])
     for k in ("boxes", "keypoints", "probs"):
         print(f"{k}: {'PASS' if res['verdicts'][k] else 'FAIL'} {res[k]}")
