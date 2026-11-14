@@ -4,7 +4,7 @@ R-CV-6D forecast of the next second -> video.
 
 Usage (venv ~/.venvs/dronepose-yolo, from the repo root):
   python scripts/demo.py --sequence 14_02_07_000 --mode offline|streaming [--W N] [--obs e|r]
-      --out OUT.mp4 [--rows OUT.jsonl] [--config configs/pipeline.json] [--device mps]
+      --out OUT.mp4 [--rows OUT.jsonl] [--config configs/pipeline.json] [--device mps] [--gravity]
 Streaming processes every frame in order, using only frames up to the current one, and records the time of every
 stage (no frame is skipped when slower than real time). Default W / obs: the choices of
 experiments/pipeline/streaming_val_s0/results.json. Source: 6DroneSyn val only (never the test).
@@ -67,6 +67,9 @@ def main(argv=None) -> None:
     ap.add_argument("--rows", default=None)
     ap.add_argument("--config", default="configs/pipeline.json")
     ap.add_argument("--device", default=None)
+    ap.add_argument("--gravity", action="store_true",
+                    help="gravity prior in the choice (candidates tilted > 70 deg from the vertical are excluded); "
+                         "post hoc analysis, off by default")
     args = ap.parse_args(argv)
     dW, dobs = defaults()
     W, obs = args.W or dW, args.obs or dobs
@@ -94,7 +97,7 @@ def main(argv=None) -> None:
     rows = []
     try:
         if args.mode == "streaming":
-            dec = StreamingDecider(info, params, W)
+            dec = StreamingDecider(info, params, W, args.gravity)
             hist: deque = deque(maxlen=N_OBS)          # emitted poses {frame_idx, R, t, cls}
             for frame in src.frames(seq):
                 t0 = time.perf_counter()
@@ -118,7 +121,7 @@ def main(argv=None) -> None:
                              "future_g": None if fut_g is None else fut_g.tolist()})
         else:
             percs = [models.perceive(f, info) for f in src.frames(seq)]
-            results, _ = decide_sequence(percs, recs, info, params, "offline")
+            results, _ = decide_sequence(percs, recs, info, params, "offline", gravity=args.gravity)
             hist = deque(maxlen=N_OBS)
             for frame, p, res in zip(src.frames(seq), percs, results):
                 hist.append({"frame_idx": frame.frame_idx, "R": res["R"], "t": res["t"], "cls": res["drone_model"]})

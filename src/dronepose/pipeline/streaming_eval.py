@@ -36,6 +36,23 @@ def select_window(summaries: dict[int, dict], rot_by_traj: dict[int, dict[str, l
             "ci_vs_best": {W: boot[str(W)] for W in eligible}}
 
 
+def select_window_flips(summaries: dict[int, dict], flips_by_traj: dict[int, dict[str, list[float]]],
+                        rot_by_traj: dict[int, dict[str, list[float]]], n_boot: int = 2000, seed: int = 0) -> dict:
+    """Post hoc rule: coverage >= 95%, best = lowest flip rate without drone 08; W tied with the best (bootstrap
+    interval of the flip difference, stat mean, includes 0); among the tied the lowest median rotation, then the
+    smaller W. `rot_by_traj` is only used for the tie-break through `summaries[W]["median_rot_err_deg"]`."""
+    eligible = sorted(W for W, s in summaries.items() if s["coverage"] is not None and s["coverage"] >= MIN_COVERAGE)
+    if not eligible:
+        raise ValueError("no W reaches the coverage threshold")
+    best = min(eligible, key=lambda W: summaries[W]["flip_rate_no08"])
+    boot = paired_bootstrap({str(W): flips_by_traj[W] for W in eligible}, ref=str(best), n_boot=n_boot, seed=seed,
+                            stat="mean")
+    tied = [W for W in eligible if W == best or boot[str(W)][1] <= 0 <= boot[str(W)][2]]
+    chosen = min(tied, key=lambda W: (summaries[W]["median_rot_err_deg"], W))
+    return {"chosen": chosen, "best": best, "eligible": eligible, "tied": tied,
+            "ci_vs_best": {W: boot[str(W)] for W in eligible}}
+
+
 def select_obs_mode(err_e: dict, err_r: dict, windows, b: int) -> dict:
     """(r) only if its ADE at 1 s is lower than (e) with an interval that excludes 0; otherwise (e)."""
     d = degradation(err_r, err_e, windows, b)[NET]

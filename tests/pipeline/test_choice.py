@@ -71,3 +71,33 @@ def test_candidates_none_model():
     from pathlib import Path
     m = load_drone_models(Path("configs/drone_models.json"))["01"]
     assert candidates(k, np.eye(3), m) == []
+
+
+def _tilted_pair():
+    from dronepose.eval.units import UP_CAM
+    up_R = Rotation.align_vectors([UP_CAM], [[0, 0, 1.0]])[0].as_matrix()          # body z = camera up
+    tilt_R = Rotation.align_vectors([[0, 0, 1.0]], [[0, 0, 1.0]])[0].as_matrix()    # body z = camera z: 90 deg from up
+    assert np.allclose(up_R[:, 2], UP_CAM)
+    t = np.array([0, 0, 10.0])
+    return PnPSolution(up_R, t, 4.0), PnPSolution(tilt_R, t, 1.0), UP_CAM
+
+
+def test_gravity_excludes_tilted_candidate():
+    ok, tilted, up = _tilted_pair()
+    cands = [sorted([ok, tilted], key=lambda s: s.reproj_px)]
+    assert choose_offline(cands, [1])[0].solution is tilted
+    assert choose_offline(cands, [1], up=up)[0].solution is ok
+    assert WindowChooser(5).step(cands[0], 1)[0].solution is tilted
+    assert WindowChooser(5, up=up).step(cands[0], 1)[0].solution is ok
+
+
+@pytest.mark.parametrize("W", [1, 15, 120])
+def test_window_with_gravity_equals_global_on_prefix(W):
+    from dronepose.eval.units import UP_CAM
+    cands = _seq()
+    ch = WindowChooser(W, up=UP_CAM)
+    for t in range(len(cands)):
+        emitted, _ = ch.step(cands[t], t + 1)
+        lo = max(0, t - W + 1)
+        ref = disambiguate_global(cands[lo:t + 1], GlobalParams(), list(range(lo + 1, t + 2)), up=UP_CAM)
+        assert _key(emitted) == _key(ref[-1]), t

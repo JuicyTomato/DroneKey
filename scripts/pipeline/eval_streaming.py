@@ -2,7 +2,7 @@
 
 Usage (venv ~/.venvs/dronepose-yolo, from the repo root):
   python scripts/pipeline/eval_streaming.py [--config configs/pipeline_sN.json] [--perception PERC.jsonl]
-      [--out OUT_DIR] [--W 60 --obs e] [--bootstrap-b 10000] [--device auto]
+      [--out OUT_DIR] [--W 60 --obs e] [--bootstrap-b 10000] [--device auto] [--extras]
 Defaults follow the config's seed: experiments/pipeline/perception_val_sN.jsonl, experiments/pipeline/streaming_val_sN.
 --W / --obs freeze the choices (seeds 1, 2 reuse those of seed 0) instead of applying the selection rules.
 Rows: offline (DroneKey); streaming W = 1, 15, 30, 60, 120 (emitted poses); chosen W with re-decided poses;
@@ -34,7 +34,7 @@ from dronepose.pipeline.klass import load_klg_params  # noqa: E402
 from dronepose.pipeline.perception import Perception  # noqa: E402
 from dronepose.pipeline.sources import SixDroneSynSource  # noqa: E402
 from dronepose.pipeline.streaming_eval import (NET, pose_summary, select_obs_mode, select_window,  # noqa: E402
-                                               window_errors)
+                                               select_window_flips, window_errors)
 from dronepose.pose.replay import load_keypoints  # noqa: E402
 from e4_train import e4_run_name  # noqa: E402
 
@@ -42,12 +42,12 @@ WS = (1, 15, 30, 60, 120)
 E4B_THESIS_KLG = 0.153
 
 
-def run_variant(src, percs, params, mode, W=None):
+def run_variant(src, percs, params, mode, W=None, gravity=False):
     res, red = {}, {}
     for seq in src.sequences():
         recs = src.records(seq)
         res[seq], red[seq] = decide_sequence([percs[r["frame_id"]] for r in recs], recs, src.info(seq), params,
-                                             mode, W)
+                                             mode, W, gravity)
     return res, red
 
 
@@ -70,6 +70,9 @@ def main(argv=None) -> None:
     ap.add_argument("--config", default="configs/pipeline.json")
     ap.add_argument("--bootstrap-b", type=int, default=10000)
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--extras", action="store_true",
+                    help="post hoc analyses (gravity prior, flip-aware W rule), written to extras.json / extras.md; "
+                         "results.json and table.md are not changed")
     args = ap.parse_args(argv)
     t0 = time.time()
     cfg_p = json.loads(Path(args.config).read_text())
@@ -159,7 +162,98 @@ def main(argv=None) -> None:
                                                  if isinstance(x, np.ndarray) else float(x)))
     write_table(out / "table.md", res, Wc, stream, seed)
     print((out / "table.md").read_text())
+    if args.extras:
+        extras = run_extras(args, src, percs, params, variants, res, rot, by_id, trajs, fcfg, errs, paired, params_for,
+                            nets_for, device, Wc, seed, b, t0)
+        (out / "extras.json").write_text(json.dumps(extras, indent=1, default=lambda x: x.tolist()
+                                                    if isinstance(x, np.ndarray) else float(x)))
+        write_extras_md(out / "extras.md", extras, seed)
+        print((out / "extras.md").read_text())
     print(f"total {time.time() - t0:.0f}s")
+
+
+GRID = (15, 30, 60, 120)      # eligible W of the selection rules (W = 1 is excluded as in the official rule)
+GWS = (1, 15, 30, 60, 120)
+
+
+def run_extras(args, src, percs, params, variants, res, rot, by_id, trajs, fcfg, errs, paired, params_for, nets_for,
+               device, Wc, seed, b, t0) -> dict:
+    """Post hoc analyses declared as added after the results: gravity prior (`up` in `global`) and flip-aware W."""
+    out = Path(args.out or f"experiments/pipeline/streaming_val_s{seed}")
+    H = fcfg.pred_len
+    variants["offline_g"] = run_variant(src, percs, params, "offline", gravity=True)
+    for W in GWS:
+        variants[f"W{W}_g"] = run_variant(src, percs, params, "streaming", W, gravity=True)
+        print(f"extras W={W}_g done {time.time() - t0:.0f}s", flush=True)
+    names = ["offline"] + [f"W{W}" for W in GWS] + ["offline_g"] + [f"W{W}_g" for W in GWS]
+    ex = {"seed": seed, "W_official": Wc, "grid": list(GRID)}
+    ex["summary"] = {k: pose_summary(flat(variants[k][0])) for k in names}
+    rotx = {k: by_trajectory(flat(variants[k][0]), "rot_err_deg") for k in names}
+    flp = {k: flips(flat(variants[k][0])) for k in names}
+    ex["rot_vs"], ex["flip_vs"] = {}, {}
+    for ref in ("offline", "offline_g"):
+        ex["rot_vs"][ref] = paired_bootstrap(rotx, ref=ref, n_boot=b)
+        ex["flip_vs"][ref] = paired_bootstrap(flp, ref=ref, n_boot=b, stat="mean")
+    ex["flip_aware"] = {}
+    for tag, suf in (("nogravity", ""), ("gravity", "_g")):
+        ex["flip_aware"][tag] = select_window_flips({W: ex["summary"][f"W{W}{suf}"] for W in GRID},
+                                                    {W: flp[f"W{W}{suf}"] for W in GRID},
+                                                    {W: rotx[f"W{W}{suf}"] for W in GRID}, n_boot=b)
+    # forecast errors: emitted poses (mode e) for the rows below
+    todo = ["offline_g", f"W{Wc}_g"]
+    for tag, suf in (("nogravity", ""), ("gravity", "_g")):
+        todo.append(f"W{ex['flip_aware'][tag]['chosen']}{suf}")
+    for name in dict.fromkeys(todo):
+        if name in errs:
+            continue
+        path = out / "poses" / f"poses_val_s{seed}_{name}.jsonl"
+        write_pose_file(variants[name][0], by_id, "val", seed, f"pipeline_{name}", path)
+        w, _ = load_pose_windows(path, trajs, fcfg)
+        errs[name] = window_errors(w, fcfg, params_for, nets_for, device)
+        print(f"extras forecast {name} done {time.time() - t0:.0f}s", flush=True)
+    ex["forecast"] = {}
+    for name in dict.fromkeys(["offline"] + todo):
+        e = errs[name][0]
+        ex["forecast"][name] = {k: {"ade_1s": float(ade_at(e[k], H).mean()), "fde_1s": float(e[k][:, -1].mean()),
+                                    "n_windows": int(len(e[k]))} for k in (NET, REFERENCE)}
+    pairs = [("offline_g", "offline"), (f"W{Wc}_g", "offline_g"), (f"W{Wc}_g", "offline")]
+    for tag, suf in (("nogravity", ""), ("gravity", "_g")):
+        c = f"W{ex['flip_aware'][tag]['chosen']}{suf}"
+        pairs += [(c, "offline_g" if suf else "offline"), (c, "offline")]
+    ex["forecast_minus"] = {}
+    for a, r in dict.fromkeys(pairs):
+        if a == r:
+            continue
+        ea, er, wr = paired(a, r)
+        ex["forecast_minus"][f"{a} - {r}"] = degradation(ea, er, wr, b)
+    return ex
+
+
+def write_extras_md(path: Path, ex: dict, seed: int) -> None:
+    S = ex["summary"]
+    L = [f"# Extra post hoc — val 6DroneSyn, seme {seed}", "",
+         "Analisi aggiunte DOPO i risultati (prior di gravita' su `global`, regola di scelta di W per flip); "
+         "non sostituiscono le righe ufficiali. Differenze: bootstrap appaiato per traiettoria.", "",
+         "| riga | copertura | rot mediana (°) | Δ rot vs offline [IC] | Δ rot vs offline_g [IC] | flip senza 08 | Δ flip vs offline [IC] | Δ flip vs offline_g [IC] |",
+         "|---|---|---|---|---|---|---|---|"]
+    ci = lambda d, k=1.0, n=3: f"{k * d[0]:+.{n}f} [{k * d[1]:+.{n}f}, {k * d[2]:+.{n}f}]"
+    for k, s in S.items():
+        L.append(f"| {k} | {100 * s['coverage']:.1f}% | {s['median_rot_err_deg']:.3f} | {ci(ex['rot_vs']['offline'][k])} "
+                 f"| {ci(ex['rot_vs']['offline_g'][k])} | {100 * s['flip_rate_no08']:.2f}% "
+                 f"| {ci(ex['flip_vs']['offline'][k], 100, 2)} | {ci(ex['flip_vs']['offline_g'][k], 100, 2)} |")
+    L += ["", "Scelta di W per flip (copertura >= 95%, meno flip senza 08, pareggio = IC della differenza include 0, "
+          "poi rot mediana minore, poi W minore):", ""]
+    for tag, fa in ex["flip_aware"].items():
+        L.append(f"- {tag}: scelto W = {fa['chosen']} (migliore sui flip {fa['best']}, in pareggio {fa['tied']}, ammessi {fa['eligible']}).")
+    L += ["", f"Previsione, emesse (droni 01–06, metri): ", "",
+          f"| riga | {NET} ADE 1 s | {NET} FDE 1 s | {REFERENCE} ADE 1 s | finestre |", "|---|---|---|---|---|"]
+    for k, v in ex["forecast"].items():
+        L.append(f"| {k} | {v[NET]['ade_1s']:.4f} | {v[NET]['fde_1s']:.4f} | {v[REFERENCE]['ade_1s']:.4f} | {v[NET]['n_windows']} |")
+    L += ["", f"{NET}, differenza ADE 1 s (prima − seconda):", ""]
+    for k, d in ex["forecast_minus"].items():
+        x = d[NET]
+        L.append(f"- {k}: {x['mean']:+.4f} m [{x['ci'][0]:+.4f}, {x['ci'][1]:+.4f}]")
+    path.write_text("\n".join(L) + "\n")
 
 
 def write_table(path: Path, res: dict, Wc: int, stream: str, seed: int) -> None:

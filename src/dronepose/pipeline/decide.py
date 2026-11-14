@@ -47,13 +47,18 @@ def _result(rec: dict, perc: Perception, ch: Choice, drone_model: str | None) ->
     return out
 
 
+def _up(info: SceneInfo) -> np.ndarray:
+    """Camera-frame vertical from the source's camera -> gravity matrix (6DroneSyn: UP_CAM)."""
+    return info.G.T @ np.array([0.0, 0.0, 1.0])
+
+
 class StreamingDecider:
     """Decision of one frame at a time, past only: class, IPPE + LM with the class model, choice on the last W frames."""
 
-    def __init__(self, info: SceneInfo, params: dict, W: int):
+    def __init__(self, info: SceneInfo, params: dict, W: int, gravity: bool = False):
         self.info, self.params = info, params
         self.fuser = CausalClassFuser()
-        self.chooser = WindowChooser(W)
+        self.chooser = WindowChooser(W, up=_up(info) if gravity else None)
 
     def step(self, p: Perception, rec: dict | None, K) -> tuple[dict, list[dict]]:
         """(result of this frame, poses re-decided now for the last min(15, W, n) frames, oldest first)."""
@@ -66,9 +71,10 @@ class StreamingDecider:
 
 
 def decide_sequence(perc: list[Perception], records: list[dict], info: SceneInfo, params: dict, mode: str,
-                    W: int | None = None) -> tuple[list[dict], dict[int, list[dict]]]:
+                    W: int | None = None, gravity: bool = False) -> tuple[list[dict], dict[int, list[dict]]]:
     """One result per frame (replay format + drone_model) and, in streaming, the poses re-decided at every frame
-    for the last 15 frames ({frame_idx: [{"frame_idx", "R", "t"}, ...]}, oldest first; empty dict offline)."""
+    for the last 15 frames ({frame_idx: [{"frame_idx", "R", "t"}, ...]}, oldest first; empty dict offline).
+    gravity=True (opt-in, post hoc analysis): the choice excludes candidates tilted > 70 deg from the vertical."""
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}: expected one of {MODES}")
     if mode == "streaming" and (W is None or W < 1):
@@ -76,7 +82,7 @@ def decide_sequence(perc: list[Perception], records: list[dict], info: SceneInfo
     if [p.frame_id for p in perc] != [r["frame_id"] for r in records]:
         raise ValueError("perceptions and records are not the same frames in the same order")
     if mode == "streaming":
-        dec = StreamingDecider(info, params, W)
+        dec = StreamingDecider(info, params, W, gravity)
         out, redecided = [], {}
         for p, r in zip(perc, records):
             res, red = dec.step(p, r, r["K"])
@@ -89,7 +95,7 @@ def decide_sequence(perc: list[Perception], records: list[dict], info: SceneInfo
         cls = info.fixed_class or fuser.update(klg_frame_scores(p.probs, p.reproj, params))
         classes.append(cls)
         cands.append(candidates(p.kpts, r["K"], info.models[cls] if cls else None))
-    emitted = choose_offline(cands, [p.frame_idx for p in perc])
+    emitted = choose_offline(cands, [p.frame_idx for p in perc], up=_up(info) if gravity else None)
     return [_result(r, p, ch, cls) for p, r, ch, cls in zip(perc, records, emitted, classes)], {}
 
 

@@ -23,15 +23,16 @@ def candidates(kpts: np.ndarray, K: np.ndarray, model: DroneModel | None) -> lis
     return solve("ippe", model.kpts_flu, img, np.asarray(K, float), refine=True)
 
 
-def choose_offline(cands: list[list[PnPSolution]], frame_idx: list[int]) -> list[Choice]:
-    return disambiguate_global(cands, GlobalParams(), frame_idx)
+def choose_offline(cands: list[list[PnPSolution]], frame_idx: list[int], up: np.ndarray | None = None) -> list[Choice]:
+    """`up` (camera-frame vertical) is the optional gravity prior of `disambiguate_global`."""
+    return disambiguate_global(cands, GlobalParams(), frame_idx, up=up)
 
 
 class WindowChooser:
-    def __init__(self, W: int, params: GlobalParams = GlobalParams()):
+    def __init__(self, W: int, params: GlobalParams = GlobalParams(), up: np.ndarray | None = None):
         if W < 1:
             raise ValueError("W must be >= 1")
-        self.W, self.params = W, params
+        self.W, self.params, self.up = W, params, up
         self.cands: deque = deque(maxlen=W)
         self.idx: deque = deque(maxlen=W)
 
@@ -39,5 +40,5 @@ class WindowChooser:
         """(choice emitted for this frame, choices re-decided now for the last min(15, n) frames, oldest first)."""
         self.cands.append(cands)
         self.idx.append(frame_idx)
-        ch = disambiguate_global(list(self.cands), self.params, list(self.idx))
+        ch = disambiguate_global(list(self.cands), self.params, list(self.idx), up=self.up)
         return ch[-1], ch[-N_REDECIDED:]

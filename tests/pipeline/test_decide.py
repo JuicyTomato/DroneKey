@@ -107,3 +107,22 @@ def test_pose_file_and_redecided_windows(tmp_path):
     assert np.allclose(w.obs_p, w_ref.obs_p) and np.allclose(w.obs_R, w_ref.obs_R)
     assert np.array_equal(w.obs_valid, w_ref.obs_valid)
     assert np.array_equal(w.meta["gt_index"], w_ref.meta["gt_index"])
+
+
+@needs_files
+def test_offline_gravity_matches_replay_up():
+    from dronepose.eval.units import UP_CAM
+    recs, kp = _records(), load_keypoints(YOLO_KPTS)
+    info = SceneInfo(GRAVITY_FROM_CAMERA, "02", MODELS)
+    res, _ = decide_sequence(_percs(recs, kp), recs, info, P, "offline", gravity=True)
+    ref = replay(recs, kp, MODELS, "global", model_drone={r["frame_id"]: "02" for r in recs}, solver="ippe",
+                 refine=True, up=UP_CAM)[SEQ]
+    for a, b in zip(res, ref):
+        assert a["rejected"] == b["rejected"], a["frame_id"]
+        if not a["rejected"]:
+            assert np.allclose(a["R"], b["R"], atol=1e-9) and np.allclose(a["t"], b["t"], atol=1e-9)
+
+
+def test_gravity_up_is_camera_vertical():
+    from dronepose.eval.units import UP_CAM
+    assert np.allclose(GRAVITY_FROM_CAMERA.T @ np.array([0, 0, 1.0]), UP_CAM)
