@@ -1,7 +1,6 @@
 # dronepose
 
-Tesi magistrale: keypoint dei droni → posa 6-DoF → predizione della traiettoria.
-Piano: `docs/PIANO_DI_LAVORO.md`. Decisioni e fatti sui dati: `PROJECT_MEMORY.md`.
+keypoint dei droni → posa 6-DoF → predizione della traiettoria.
 
 ## Installazione
     python3 -m venv .venv
@@ -18,4 +17,4 @@ Piano: `docs/PIANO_DI_LAVORO.md`. Decisioni e fatti sui dati: `PROJECT_MEMORY.md
     .venv/bin/python scripts/build_yolo_crops.py
     .venv/bin/python scripts/package_cache.py
 
-Il dataset 6DroneSyn non è nel repo (licenza: vietata la redistribuzione). Neanche i PDF dei paper (`docs/papers/`, copyright IEEE): stanno su OneDrive.
+Il dataset 6DroneSyn non è nel repo (licenza: vietata la redistribuzione). Tantomeno i PDF dei paper (`docs/papers/`, copyright IEEE).
