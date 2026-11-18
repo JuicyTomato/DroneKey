@@ -1,0 +1,12 @@
+{
+ "seed": 0,
+ "detector": "/Volumes/MakeMePasta/DroneKey_aug/runs/c_c90b20/weights/best.pt",
+ "keypoints": "/Volumes/MakeMePasta/DroneKey_aug/runs/dk_c90b20_s0/best.pt",
+ "classifier": "experiments/class/cls_runs/runs0/cls_s_s0/weights/last.pt",
+ "class_params": "experiments/class/eval/final_params.json",
+ "forecast_runs": "experiments/forecast/e4/runs",
+ "forecast_params": "data/processed/forecast_archive/e4",
+ "device": "mps",
+ "det_conf": 0.1,
+ "forecast_scene": "final"
+}

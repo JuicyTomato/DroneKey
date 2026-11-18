@@ -53,3 +53,39 @@ def test_forecaster_none_cases():
     v[-1] = True
     assert f.predict(np.zeros((15, 3)), np.tile(np.eye(3), (15, 1, 1)), v, "02") is None
     assert f.predict(np.zeros((15, 3)), np.tile(np.eye(3), (15, 1, 1)), np.ones(15, bool), "08") is None
+
+
+def test_final_split_paths(tmp_path, monkeypatch):
+    import dronepose.pipeline.forecast_now as fn
+    cfg = tmp_path / "pipeline.json"
+    cfg.write_text(json.dumps({"forecast_params": str(tmp_path), "forecast_runs": str(tmp_path / "runs"), "seed": 0}))
+    read = []
+
+    def fake_read(self):
+        read.append(Path(self).name)
+        return "{}"
+
+    class Stop(Exception):
+        pass
+
+    def stop(*a, **k):
+        raise Stop
+
+    monkeypatch.setattr(Path, "read_text", lambda self: fake_read(self) if self.name.startswith("params_") else
+                        Path.read_bytes(self).decode())
+    monkeypatch.setattr(fn, "load_config", lambda p: None)
+    monkeypatch.setattr(fn, "load_checkpoint", stop)
+    for scene, tag in (("final", "final"), ("03", "fold03")):
+        read.clear()
+        with pytest.raises(Stop):
+            fn.Forecaster(scene, cfg_path=cfg)
+        assert read == [f"params_{tag}.json"]
+        assert tag in fn._run_name(scene, 0)
+    assert "foldfinal" not in fn._run_name("final", 0)
+
+
+@pytest.mark.skipif(not Path("experiments/forecast/e4/runs/R-CV_noisy_gru_6d_final_s0/best.pt").exists(),
+                    reason="final run missing")
+def test_forecaster_final_builds():
+    f = Forecaster("final")
+    assert f.run.name == "R-CV_noisy_gru_6d_final_s0"

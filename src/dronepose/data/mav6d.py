@@ -38,3 +38,11 @@ def project(points_body: np.ndarray, R: np.ndarray, t: np.ndarray) -> np.ndarray
 def undistort(px: np.ndarray) -> np.ndarray:
     """Distorted pixels (N,2) -> normalised camera coordinates (N,2)."""
     return cv2.undistortPoints(np.asarray(px, float).reshape(-1, 1, 2), K, DIST).reshape(-1, 2)
+
+
+def planar(k: np.ndarray) -> np.ndarray:
+    """Project the points on their least-squares plane: IPPE needs exactly coplanar points (the triangulated hubs are
+    off by < 1 mm)."""
+    c = k - k.mean(0)
+    n = np.linalg.svd(c)[2][2]
+    return k - np.outer(c @ n, n)

@@ -22,6 +22,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))   # dronepose without pip install
 from dronepose.data.canonical import read_jsonl  # noqa: E402
 from dronepose.data.drone_models import DroneModel, load_drone_models  # noqa: E402
+from dronepose.data.mav6d import planar  # noqa: E402
 from dronepose.eval.bootstrap import by_trajectory, paired_bootstrap  # noqa: E402
 from dronepose.eval.detection import detection_metrics  # noqa: E402
 from dronepose.eval.e1 import e1_metrics, mean_std  # noqa: E402
@@ -59,14 +60,6 @@ def undistort_kpts(kp: np.ndarray, K: np.ndarray, dist: np.ndarray) -> np.ndarra
     if ok.any():
         out[ok, :2] = cv2.undistortPoints(out[ok, :2].reshape(-1, 1, 2), K, dist, P=K).reshape(-1, 2)
     return out
-
-
-def planar(k: np.ndarray) -> np.ndarray:
-    """Project the points on their least-squares plane: IPPE needs exactly coplanar points (the triangulated hubs are
-    off by < 1 mm)."""
-    c = k - k.mean(0)
-    n = np.linalg.svd(c)[2][2]
-    return k - np.outer(c @ n, n)
 
 
 def models_3d(hub_model: Path, syn_models: Path) -> dict[str, dict[str, DroneModel]]:

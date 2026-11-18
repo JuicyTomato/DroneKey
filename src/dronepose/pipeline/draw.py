@@ -14,7 +14,8 @@ OUT_H = IMG_H + BAND
 def draw_frame(frame: Frame, perc: Perception, res: dict, future_cam: np.ndarray | None, mode: str,
                ms_total: float | None) -> np.ndarray:
     gt = (frame.record or {}).get("kpts2d") or np.zeros((0, 2))
-    img = draw_overlay(frame.image, frame.K, gt, perc.kpts, res.get("R"), res.get("t"), future_cam)
+    img = draw_overlay(frame.image, frame.K, gt, perc.kpts, res.get("R"), res.get("t"), future_cam,
+                       dist=getattr(frame, "dist", None))
     if perc.box is not None:
         x0, y0, x1, y1 = (int(v) for v in perc.box)
         cv2.rectangle(img, (x0, y0), (x1, y1), (255, 255, 0), 2)

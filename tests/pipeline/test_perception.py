@@ -1,9 +1,13 @@
+import importlib.util
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from dronepose.data import mav6d
 from dronepose.data.drone_models import load_drone_models
 from dronepose.eval.units import GRAVITY_FROM_CAMERA
-from dronepose.pipeline.perception import MS_KEYS, Perception, PerceptionModels
+from dronepose.pipeline.perception import MS_KEYS, Perception, PerceptionModels, undistort_perception
 from dronepose.pipeline.sources import Frame, SceneInfo
 
 K = np.array([[2666.6667, 0, 960], [0, 2666.6667, 540], [0, 0, 1.0]])
@@ -103,3 +107,23 @@ def test_box_scale_follows_frame_width():
     det = lambda im: (np.array([[100, 50, 140, 80]], float), np.array([0.9]), np.array([1.0]), np.zeros((1, 4, 2)), None)
     p = PerceptionModels(det, _kp, _cls).perceive(fr, _info())
     assert p.box == pytest.approx([200, 100, 280, 160])
+
+
+def test_top_conf_from_config():
+    assert PerceptionModels(_det(conf=0.15), _kp, _cls, top_conf=0.1).perceive(_frame(), _info()).box is not None
+    assert PerceptionModels(_det(conf=0.15), _boom, _boom).perceive(_frame(), _info()).box is None
+
+
+def test_undistort_perception_matches_e2():
+    spec = importlib.util.spec_from_file_location("eval_e2", Path("scripts/real/eval_e2.py"))
+    e2 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(e2)
+    k = np.array([[900, 500, 0.9], [1000, 480, 0.8], [np.nan, np.nan, 0.0], [905, 610, 0.7]], float)
+    p = Perception("f", 1, [0, 0, 1, 1], 0.9, k, None, None, {})
+    out = undistort_perception(p, mav6d.K, mav6d.DIST)
+    assert out is not p and np.array_equal(p.kpts, k, equal_nan=True)
+    np.testing.assert_allclose(out.kpts, e2.undistort_kpts(k, mav6d.K, mav6d.DIST), equal_nan=True)
+    assert np.isnan(out.kpts[2, :2]).all()
+    assert np.array_equal(out.kpts[:, 2], k[:, 2])
+    assert not np.allclose(out.kpts[0, :2], k[0, :2])
+    assert undistort_perception(p, mav6d.K, None) is p

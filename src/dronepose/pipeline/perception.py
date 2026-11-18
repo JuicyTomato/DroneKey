@@ -5,9 +5,10 @@ The three model calls are injectable callables (tests use fakes); `PerceptionMod
 """
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from dronepose.data.crops import CROP_SIZE, CropBox
@@ -44,6 +45,19 @@ class Perception:
                    row["reproj"], dict(row.get("ms") or {}))
 
 
+def undistort_perception(p: Perception, K: np.ndarray, dist: np.ndarray | None) -> Perception:
+    """Copy of `p` with keypoints mapped to ideal pinhole pixels (same K); NaN rows stay NaN. `dist=None` -> `p`."""
+    if dist is None:
+        return p
+    if p.kpts is None:
+        return replace(p)
+    kp = np.array(p.kpts, float, copy=True)
+    ok = np.isfinite(kp[:, :2]).all(1)
+    if ok.any():
+        kp[ok, :2] = cv2.undistortPoints(kp[ok, :2].reshape(-1, 1, 2), K, dist, P=K).reshape(-1, 2)
+    return replace(p, kpts=kp)
+
+
 def _sync(device: str | None) -> None:
     if device == "mps":
         import torch
@@ -51,10 +65,12 @@ def _sync(device: str | None) -> None:
 
 
 class PerceptionModels:
-    def __init__(self, detect, keypoints, classify, device: str | None = None):
+    def __init__(self, detect, keypoints, classify, device: str | None = None,
+                 top_conf: float = TOP_CONF):
         """detect(img_small) -> (xyxy, conf, cls, kxy, kconf) in small-image pixels; keypoints(crop, CropBox) ->
-        (4, 3) frame pixels; classify(crop) -> (probs, names)."""
+        (4, 3) frame pixels; classify(crop) -> (probs, names); boxes under `top_conf` count as no detection."""
         self.detect, self.keypoints, self.classify, self.device = detect, keypoints, classify, device
+        self.top_conf = top_conf
 
     @classmethod
     def load(cls, cfg: dict, device: str) -> "PerceptionModels":
@@ -79,7 +95,7 @@ class PerceptionModels:
             r = clf.predict(crop, imgsz=CROP_SIZE, device=device, verbose=False)[0]
             return r.probs.data.cpu().numpy(), clf.names
 
-        return cls(detect, keypoints, classify, device)
+        return cls(detect, keypoints, classify, device, cfg.get("det_conf", TOP_CONF))
 
     def perceive(self, frame: Frame, info: SceneInfo) -> Perception:
         ms = dict.fromkeys(MS_KEYS, 0.0)
@@ -93,7 +109,7 @@ class PerceptionModels:
         ms["detect"] = 1000 * (time.perf_counter() - t)
         conf = np.asarray(conf, float)
         out = Perception(frame.frame_id, frame.frame_idx, None, 0.0, no_detection(), None, None, ms)
-        if len(conf) == 0 or conf.max() < TOP_CONF:
+        if len(conf) == 0 or conf.max() < self.top_conf:
             return out
         j = int(np.argmax(conf))
         scale = frame.image.shape[1] / small.shape[1]

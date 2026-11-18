@@ -21,12 +21,14 @@ from dronepose.eval.units import METERS_PER_UNIT
 NET = "R-CV-6D"
 
 
-def live_window(hist: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, str | None]:
+def live_window(hist: list[dict], G: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray, str | None]:
     """Observation window from the last poses {R, t, cls} (camera frame, oldest first), as E4b builds it: every frame
     in metres with the scale of ITS predicted class; frames without a pose, without a class or predicted as a drone
     without a metric size are lost. Returns positions (gravity frame), rotations, valid mask and the reference class
-    (class of the last valid frame; None = no metric frame, no forecast)."""
-    from dronepose.eval.units import GRAVITY_FROM_CAMERA as G
+    (class of the last valid frame; None = no metric frame, no forecast). G: camera -> gravity frame (default: the
+    6DroneSyn one); a source with its own gravity frame must pass its `info.G`."""
+    from dronepose.eval.units import GRAVITY_FROM_CAMERA
+    G = GRAVITY_FROM_CAMERA if G is None else np.asarray(G, float)
     n = len(hist)
     P, R, V, ref = np.zeros((n, 3)), np.tile(np.eye(3), (n, 1, 1)), np.zeros(n, bool), None
     for k, x in enumerate(hist):
@@ -38,11 +40,16 @@ def live_window(hist: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, s
 _E4 = Path(__file__).resolve().parents[3] / "scripts" / "forecast" / "e4"
 
 
+def _split(scene: str) -> str:
+    """Split of the parameters and of the network: "final" (trained on every scene) or the fold of the scene."""
+    return "final" if scene == "final" else f"fold{scene}"
+
+
 def _run_name(scene: str, seed: int) -> str:
     if str(_E4) not in sys.path:
         sys.path.insert(0, str(_E4))
     from e4_train import e4_run_name
-    return e4_run_name(NET, f"fold{scene}", seed)
+    return e4_run_name(NET, _split(scene), seed)
 
 
 class Forecaster:
@@ -50,7 +57,7 @@ class Forecaster:
                  forecast_cfg: Path = Path("configs/forecast.json"), device: str = "auto"):
         cfg = json.loads(Path(cfg_path).read_text())
         self.cfg = load_config(Path(forecast_cfg))
-        self.params = json.loads((Path(cfg["forecast_params"]) / f"params_fold{scene}.json").read_text())
+        self.params = json.loads((Path(cfg["forecast_params"]) / f"params_{_split(scene)}.json").read_text())
         self.run = Path(cfg["forecast_runs"]) / _run_name(scene, int(cfg["seed"]))
         self.device = pick_device(device)
         self.scene = scene

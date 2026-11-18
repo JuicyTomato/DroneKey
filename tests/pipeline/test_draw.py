@@ -1,8 +1,10 @@
 import numpy as np
 
+from dronepose.data import mav6d
 from dronepose.pipeline.draw import OUT_H, OUT_W, draw_frame
 from dronepose.pipeline.perception import Perception
 from dronepose.pipeline.sources import Frame
+from dronepose.viz.overlay import draw_overlay
 
 K = np.array([[2666.6667, 0, 960], [0, 2666.6667, 540], [0, 0, 1.0]])
 
@@ -21,3 +23,14 @@ def test_draw_frame_shape_and_no_mutation():
     none = draw_frame(fr, Perception(fr.frame_id, 1, None, 0.0, np.full((4, 3), np.nan), None, None, {}),
                       {"R": None, "t": None, "drone_model": None}, None, "offline", None)
     assert none.shape == (OUT_H, OUT_W, 3)
+
+
+def test_overlay_with_distortion_moves_axes():
+    img = np.full((1080, 1920, 3), 80, np.uint8)
+    k = np.array([[900, 500, 1], [1000, 500, 1], [1000, 600, 1], [900, 600, 1]], float)
+    R, t = np.eye(3), np.array([0.5, 0.3, 3.0])
+    fut = np.array([[0.5, 0.3, 3.0], [0.8, 0.3, 3.0], [1.1, 0.4, 3.0]])
+    base = draw_overlay(img, mav6d.K, np.zeros((0, 2)), k, R, t, fut)
+    assert np.array_equal(base, draw_overlay(img, mav6d.K, np.zeros((0, 2)), k, R, t, fut, dist=None))
+    dist = draw_overlay(img, mav6d.K, np.zeros((0, 2)), k, R, t, fut, dist=mav6d.DIST)
+    assert not np.array_equal(base, dist)
