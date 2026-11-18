@@ -150,17 +150,6 @@ Training scripts for YOLO-Pose and DroneKey are in `scripts/kaggle/` (`train_yol
 
 ## Citation
 
-```bibtex
-@mastersthesis{giola2026dronekey,
-  author = {Giola, Pietro},
-  title  = {Review of drone movements in the air during flight using pose estimation techniques},
-  school = {University of Udine},
-  year   = {2026},
-  note   = {MSc in Artificial Intelligence and Cybersecurity},
-  url    = {https://github.com/JuicyTomato/DroneKey}
-}
-```
-
 If you use the MAV6D experiments, please also cite: Zheng et al., IEEE Transactions on Robotics 40, 2967-2983 (2024).
 
 ## Acknowledgements
