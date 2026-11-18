@@ -8,7 +8,7 @@ sys.path.insert(0, "scripts/real")
 _spec = importlib.util.spec_from_file_location("final_test", Path("scripts/real/final_test.py"))
 ft = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ft)
-FROZEN = {"ref": "yolo_s0", "support": [], "detector": "d.pt", "yolo": {"new_s0": "y.pt"}, "dk": {"dk_new_s0": "k.pt"}, "refs_yolo": {"yolo_s0": "ry.pt"},
+FROZEN = {"ref": "yolo_s0", "support": [], "detector": "d.pt", "det_conf": 0.1, "yolo": {"new_s0": "y.pt"}, "dk": {"dk_new_s0": "k.pt"}, "refs_yolo": {"yolo_s0": "ry.pt"},
           "refs_dk": {"dk_s0": "rk.pt"}, "refs_a_kpts": {"yolo_s0": "a.jsonl", "dk_s0": "b.jsonl"}}
 
 
@@ -88,3 +88,13 @@ def test_evals_use_the_split_records(tmp_path):
     cmds = ft.build_commands(FROZEN, tmp_path, tmp_path / "split")
     for c in cmds[-2:]:
         assert c[c.index("--canonical") + 1] == str(tmp_path / "split" / "gt.jsonl")
+
+
+def test_detector_uses_frozen_threshold(tmp_path):
+    det = ft.build_commands({**FROZEN, "det_conf": 0.1}, tmp_path, tmp_path / "split")[0]
+    assert det[det.index("--conf") + 1] == "0.1"
+
+
+def test_frozen_needs_detector_threshold():
+    with pytest.raises(ValueError, match="det_conf"):
+        ft.check_frozen({k: v for k, v in FROZEN.items() if k != "det_conf"})

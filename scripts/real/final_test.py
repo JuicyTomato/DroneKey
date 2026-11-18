@@ -39,6 +39,8 @@ def guard(allow_test: bool, out: Path, smoke: bool) -> None:
 
 def check_frozen(frozen: dict) -> None:
     """A reference missing from the setting-A exports would drop out of a table that cannot be redone."""
+    if "det_conf" not in frozen:
+        raise ValueError("det_conf missing: the detector threshold is chosen on the authors' train, never on the test")
     refs = {**frozen["refs_yolo"], **frozen["refs_dk"]}
     if frozen["ref"] not in frozen["refs_yolo"]:
         raise ValueError(f"ref {frozen['ref']!r} is not in refs_yolo")
@@ -72,7 +74,7 @@ def build_commands(frozen: dict, out: Path, split_dir: Path) -> list[list[str]]:
     gt, gtbox, det = split_dir / "gt.jsonl", split_dir / "gtbox.jsonl", out / "kpts" / "det_new.jsonl"
     new_y, new_d, ref_y, ref_d = frozen["yolo"], frozen["dk"], frozen["refs_yolo"], frozen["refs_dk"]
     cmds = [[YOLO_PY, "scripts/export_frames_c.py", "--weights", frozen["detector"], "--split", "mav6d", "--frames-dir", FRAMES,
-             "--ids-from", str(gt), "--out", str(det)]]
+             "--ids-from", str(gt), "--conf", str(frozen["det_conf"]), "--out", str(det)]]
     cmds += [_yolo(n, w, s, x, out, gt) for n, w in new_y.items() for s, x in ((gtbox, "a"), (det, "b"))]
     cmds += [_dk(n, w, s, x, out, gt) for n, w in new_d.items() for s, x in ((gtbox, "a"), (det, "b"))]
     cmds += [_yolo(n, w, det, "b", out, gt) for n, w in ref_y.items()]

@@ -6,8 +6,8 @@ usage (ultralytics venv, from the repo root):
       [--device mps] [--batch 32] [--limit N] [--all-boxes [--conf-min 0.01]]
 Row: {"frame_id", "kpts_pred", "box", "box_conf", "cls"}; frames without detection stay NaN / box null.
 --all-boxes: predict at conf --conf-min and add "boxes" ([x1, y1, x2, y2, conf, cls] of every detection, frame
-pixels); the top-box fields still use only boxes with conf >= 0.25 (the Ultralytics default), so they match the
-export without the option. Use --batch 8 with --all-boxes: at conf 0.01 the Ultralytics NMS can exceed its time limit
+pixels); the top-box fields still use only boxes with conf >= --conf (default 0.25, the Ultralytics default), so they match
+the export without the option. Use --batch 8 with --all-boxes: at conf 0.01 the Ultralytics NMS can exceed its time limit
 per batch (2 s + 0.05 s per image) and silently return no boxes for the last images of a batch (seen at batch 32:
 39 of 12600 val frames empty).
 """
@@ -39,8 +39,11 @@ def main(argv=None) -> None:
     ap.add_argument("--ids-from", default=None, help="canonical JSONL: keep only its frames")
     ap.add_argument("--all-boxes", action="store_true")
     ap.add_argument("--conf-min", type=float, default=0.01, help="predict threshold with --all-boxes")
+    ap.add_argument("--conf", type=float, default=DEFAULT_CONF, help="threshold of the top-box fields")
     args = ap.parse_args(argv)
-    extra = {"conf": args.conf_min} if args.all_boxes else {}
+    if args.all_boxes and args.conf_min > args.conf:
+        ap.error("--conf-min must not exceed --conf")
+    extra = {"conf": args.conf_min if args.all_boxes else args.conf}
 
     frames = Path(args.frames_dir)
     with open(frames / f"frames_{args.split}.jsonl") as f:
@@ -69,7 +72,7 @@ def main(argv=None) -> None:
                 scale = 1920 / res.orig_shape[1]
                 boxes = all_boxes(xyxy, conf, cls, scale) if args.all_boxes else None
                 if args.all_boxes and has:
-                    keep = conf >= DEFAULT_CONF
+                    keep = conf >= args.conf
                     xyxy, conf, cls = xyxy[keep], conf[keep], cls[keep]
                     kxy, kconf = kxy[keep], None if kconf is None else kconf[keep]
                     if len(conf) == 0:
