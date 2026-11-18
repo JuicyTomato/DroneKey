@@ -10,6 +10,8 @@
 *.tar.gz
 *.tgz
 *.7z
+# documentazione, tesi e relazioni: fuori da git (risposte autori, piano di lavoro, ecc.)
+/docs/
 # figure fatte con frame di 6DroneSyn (ritagli del dataset): restano su disco, fuori da git
 /docs/figures/
 # paper IEEE scaricati con licenza universitaria: copia su OneDrive, non su GitHub
@@ -75,3 +77,9 @@ Thumbs.db
 
 # copia ordinata per fasi dei file, per scrivere la tesi (locale, non versionata)
 /PerTesi/
+
+# Spiegazione personale Fase 2 (non pubblicare)
+docs/Spiegazione_Fase2.*
+
+# log di progetto personale (resta in locale)
+/PROJECT_MEMORY.md
