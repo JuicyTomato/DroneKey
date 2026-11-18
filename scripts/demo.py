@@ -80,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--rows", default=None)
     ap.add_argument("--config", default="configs/pipeline.json")
     ap.add_argument("--device", default=None)
+    ap.add_argument("--no-forecast", action="store_true",
+                    help="no forecast: Forecaster not loaded, nothing computed or drawn, header without the forecast")
     ap.add_argument("--gravity", action="store_true",
                     help="gravity prior in the choice (candidates tilted > 70 deg from the vertical are excluded); "
                          "post hoc analysis, off by default")
@@ -122,7 +124,8 @@ def main(argv=None) -> None:
     info, recs = src.info(seq), src.records(seq)
     params = load_klg_params(Path(cfg["class_params"]))
     models = PerceptionModels.load(cfg, device)
-    fc = Forecaster(cfg.get("forecast_scene", seq[:2]), Path(args.config))
+    fc = None if args.no_forecast else Forecaster(cfg.get("forecast_scene", seq[:2]), Path(args.config))
+    show_fc = not args.no_forecast
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     ff = subprocess.Popen([ffmpeg, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{OUT_W}x{OUT_H}",
@@ -148,12 +151,12 @@ def main(argv=None) -> None:
                     over = {x["frame_idx"]: x for x in red}
                     window = [{**h, **({"R": over[h["frame_idx"]]["R"], "t": over[h["frame_idx"]]["t"]}
                                        if h["frame_idx"] in over else {})} for h in window]
-                fut_g, fut_cam = forecast_cam(fc, window, info.G)
+                fut_g, fut_cam = (None, None) if fc is None else forecast_cam(fc, window, info.G)
                 t3 = time.perf_counter()
                 ms = {**p.ms, "decide": 1000 * (t2 - t1), "forecast": 1000 * (t3 - t2)}
                 total = 1000 * (t3 - t0)
                 shown = shown_forecast(res, fut_cam, mav)
-                ff.stdin.write(draw_frame(frame, p, res, shown, f"streaming W={W} obs={obs}", total).tobytes())
+                ff.stdin.write(draw_frame(frame, p, res, shown, f"streaming W={W} obs={obs}", total, show_fc).tobytes())
                 rows.append({**p.to_row(), "ms": ms, "ms_total": total, "R": res["R"], "t": res["t"],
                              "drone_model": res["drone_model"], "rot_err_deg": res["rot_err_deg"],
                              "future_g": None if fut_g is None else fut_g.tolist(),
@@ -166,9 +169,9 @@ def main(argv=None) -> None:
             hist = deque(maxlen=N_OBS)
             for frame, p, res in zip(frames, percs, results):
                 hist.append({"frame_idx": frame.frame_idx, "R": res["R"], "t": res["t"], "cls": res["drone_model"]})
-                fut_g, fut_cam = forecast_cam(fc, list(hist), info.G)
+                fut_g, fut_cam = (None, None) if fc is None else forecast_cam(fc, list(hist), info.G)
                 shown = shown_forecast(res, fut_cam, mav)
-                ff.stdin.write(draw_frame(frame, p, res, shown, "offline", None).tobytes())
+                ff.stdin.write(draw_frame(frame, p, res, shown, "offline", None, show_fc).tobytes())
                 rows.append({**p.to_row(), "R": res["R"], "t": res["t"], "drone_model": res["drone_model"],
                              "rot_err_deg": res["rot_err_deg"], "future_g": None if fut_g is None else fut_g.tolist(),
                              "forecast_shown": shown is not None})

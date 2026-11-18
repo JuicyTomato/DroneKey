@@ -1,7 +1,7 @@
 import numpy as np
 
 from dronepose.data import mav6d
-from dronepose.pipeline.draw import OUT_H, OUT_W, draw_frame
+from dronepose.pipeline.draw import OUT_H, OUT_W, band_lines, draw_frame
 from dronepose.pipeline.perception import Perception
 from dronepose.pipeline.sources import Frame
 from dronepose.viz.overlay import draw_overlay
@@ -34,3 +34,17 @@ def test_overlay_with_distortion_moves_axes():
     assert np.array_equal(base, draw_overlay(img, mav6d.K, np.zeros((0, 2)), k, R, t, fut, dist=None))
     dist = draw_overlay(img, mav6d.K, np.zeros((0, 2)), k, R, t, fut, dist=mav6d.DIST)
     assert not np.array_equal(base, dist)
+
+
+def test_band_lines_forecast_text():
+    img = np.zeros((1080, 1920, 3), np.uint8)
+    fr = Frame("f", 1, img, K, {"drone": "05"})
+    res = {"R": np.eye(3).tolist(), "t": [0, 0, 3.0], "drone_model": "05"}
+    fut = np.zeros((3, 3))
+    old = band_lines(fr, res, fut, "streaming", 42.0)
+    assert "previsione 1 s: si" in old[1] and "42 ms/frame" in old[1]
+    assert "previsione 1 s: no" in band_lines(fr, res, None, "streaming", None)[1]
+    new = band_lines(fr, res, None, "streaming", 42.0, show_forecast=False)
+    assert all("previsione" not in s for s in new) and "42 ms/frame" in new[1]
+    assert draw_frame(fr, Perception("f", 1, None, 0.0, np.full((4, 3), np.nan), None, None, {}), res, None,
+                      "streaming", 42.0, show_forecast=False).shape == (OUT_H, OUT_W, 3)

@@ -11,8 +11,23 @@ OUT_W, IMG_H, BAND = 960, 540, 64
 OUT_H = IMG_H + BAND
 
 
+def band_lines(frame: Frame, res: dict, future_cam: np.ndarray | None, mode: str, ms_total: float | None,
+               show_forecast: bool = True) -> tuple[str, str]:
+    """The two text lines of the band; without show_forecast nothing mentions the forecast."""
+    cls = res.get("drone_model") or "-"
+    true = (frame.record or {}).get("drone")
+    pose = "posa" if res.get("R") is not None else "nessuna posa"
+    line1 = f"{mode}  {frame.frame_id}  classe {cls}" + (f" (vera {true})" if true else "") + f"  {pose}"
+    ms = f"{ms_total:.0f} ms/frame" if ms_total is not None else ""
+    if show_forecast:
+        line2 = "previsione 1 s: " + ("si" if future_cam is not None else "no") + (f"   {ms}" if ms else "")
+    else:
+        line2 = ms
+    return line1, line2
+
+
 def draw_frame(frame: Frame, perc: Perception, res: dict, future_cam: np.ndarray | None, mode: str,
-               ms_total: float | None) -> np.ndarray:
+               ms_total: float | None, show_forecast: bool = True) -> np.ndarray:
     gt = (frame.record or {}).get("kpts2d") or np.zeros((0, 2))
     img = draw_overlay(frame.image, frame.K, gt, perc.kpts, res.get("R"), res.get("t"), future_cam,
                        dist=getattr(frame, "dist", None))
@@ -21,12 +36,7 @@ def draw_frame(frame: Frame, perc: Perception, res: dict, future_cam: np.ndarray
         cv2.rectangle(img, (x0, y0), (x1, y1), (255, 255, 0), 2)
     img = cv2.resize(img, (OUT_W, IMG_H), interpolation=cv2.INTER_AREA)
     band = np.zeros((BAND, OUT_W, 3), np.uint8)
-    cls = res.get("drone_model") or "-"
-    true = (frame.record or {}).get("drone")
-    pose = "posa" if res.get("R") is not None else "nessuna posa"
-    line1 = f"{mode}  {frame.frame_id}  classe {cls}" + (f" (vera {true})" if true else "") + f"  {pose}"
-    line2 = "previsione 1 s: " + ("si" if future_cam is not None else "no") + \
-        (f"   {ms_total:.0f} ms/frame" if ms_total is not None else "")
-    for i, s in enumerate((line1, line2)):
+    lines = band_lines(frame, res, future_cam, mode, ms_total, show_forecast)
+    for i, s in enumerate(lines):
         cv2.putText(band, s, (10, 24 + 28 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
     return np.vstack([band, img])

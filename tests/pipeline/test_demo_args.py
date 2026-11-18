@@ -79,3 +79,18 @@ def test_shown_forecast():
     bad[3, 1] = np.nan
     assert demo.shown_forecast(pose, bad, False) is None
     assert demo.shown_forecast(pose, None, True) is None
+
+
+def test_no_forecast_flag(mav_args):
+    base = mav_args + ["--sequence", "01_0101"]
+    assert demo.build_parser().parse_args(base).no_forecast is False
+    assert demo.build_parser().parse_args(base + ["--no-forecast"]).no_forecast is True
+
+
+def test_no_forecast_header_has_no_previsione():
+    from dronepose.pipeline.draw import band_lines
+    from dronepose.pipeline.sources import Frame
+    fr = Frame("f", 1, np.zeros((10, 10, 3), np.uint8), np.eye(3), {})
+    res = {"R": None, "t": None, "drone_model": None}
+    assert "previsione" in band_lines(fr, res, None, "offline", None)[1]
+    assert "previsione" not in " ".join(band_lines(fr, res, None, "offline", 5.0, show_forecast=False))
